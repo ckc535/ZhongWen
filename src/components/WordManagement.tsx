@@ -47,11 +47,13 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     customWordsCount
   } = useApp();
 
-  // Full 6 New Word Input States (matching Edit Modal)
+  // Full 8 New Word Input States (matching Rich HSK schema)
   const [inputHanzi, setInputHanzi] = useState<string>('');
   const [inputPinyin, setInputPinyin] = useState<string>('');
   const [inputHanViet, setInputHanViet] = useState<string>('');
   const [inputVietnamese, setInputVietnamese] = useState<string>('');
+  const [inputRadicals, setInputRadicals] = useState<string>('');
+  const [inputMnemonic, setInputMnemonic] = useState<string>('');
   const [inputExampleSentence, setInputExampleSentence] = useState<string>('');
   const [inputExampleVietnamese, setInputExampleVietnamese] = useState<string>('');
 
@@ -88,7 +90,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     tts.speak(hanzi, settings.voiceRate, settings.voicePitch);
   };
 
-  // Trigger Gemini AI Auto-Fill for all 6 fields
+  // Trigger Gemini AI Auto-Fill for all 8 fields
   const handleAutoFill = async () => {
     const hasHanzi = Boolean(inputHanzi.trim());
     const hasPinyin = Boolean(inputPinyin.trim());
@@ -114,6 +116,8 @@ export const WordManagement: React.FC<WordManagementProps> = ({
       if (result.pinyin && !hasPinyin) setInputPinyin(result.pinyin);
       if (result.hanViet && !hasHanViet) setInputHanViet(result.hanViet);
       if (result.vietnamese && !hasVietnamese) setInputVietnamese(result.vietnamese);
+      if (result.radicals && !inputRadicals.trim()) setInputRadicals(result.radicals);
+      if (result.mnemonic && !inputMnemonic.trim()) setInputMnemonic(result.mnemonic);
       if (result.exampleSentence && !inputExampleSentence.trim()) setInputExampleSentence(result.exampleSentence);
       if (result.exampleVietnamese && !inputExampleVietnamese.trim()) setInputExampleVietnamese(result.exampleVietnamese);
 
@@ -127,7 +131,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     }
   };
 
-  // Handle Add Single Word with all 6 fields
+  // Handle Add Single Word with all 8 rich fields
   const handleAddWordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputHanzi.trim() && !inputVietnamese.trim()) {
@@ -140,6 +144,8 @@ export const WordManagement: React.FC<WordManagementProps> = ({
       pinyin: inputPinyin.trim() || '',
       hanViet: inputHanViet.trim() || '',
       vietnamese: inputVietnamese.trim() || '',
+      radicals: inputRadicals.trim() || '',
+      mnemonic: inputMnemonic.trim() || '',
       exampleSentence: inputExampleSentence.trim() || '',
       exampleVietnamese: inputExampleVietnamese.trim() || '',
       box: 1,
@@ -153,6 +159,8 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     setInputPinyin('');
     setInputHanViet('');
     setInputVietnamese('');
+    setInputRadicals('');
+    setInputMnemonic('');
     setInputExampleSentence('');
     setInputExampleVietnamese('');
     setAiError(null);
@@ -324,7 +332,38 @@ export const WordManagement: React.FC<WordManagementProps> = ({
             />
           </div>
 
-          {/* Row 3: Câu ví dụ & Dịch nghĩa câu ví dụ */}
+          {/* Row 3: Bộ thủ cấu thành & Mẹo nhớ mặt chữ (Chiết tự) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div>
+              <label className="block text-[11px] text-[#8e837a] mb-1 font-medium flex items-center gap-1">
+                <span className="text-[#e5a044]">🧩</span>
+                <span>Bộ thủ cấu thành</span>
+              </label>
+              <input
+                type="text"
+                value={inputRadicals}
+                onChange={(e) => setInputRadicals(e.target.value)}
+                placeholder="Ví dụ: 李 (họ Lý) + 月 (mặt trăng)"
+                className="w-full h-10 bg-[#161311] border border-[#2e2621] focus:border-[#df5343] rounded-xl px-3 text-xs text-[#d8cebe] placeholder-[#4e453e] focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] text-[#8e837a] mb-1 font-medium flex items-center gap-1">
+                <span className="text-[#5eb786]">💡</span>
+                <span>Mẹo nhớ cách nhìn / Chiết tự</span>
+              </label>
+              <input
+                type="text"
+                value={inputMnemonic}
+                onChange={(e) => setInputMnemonic(e.target.value)}
+                placeholder="Ví dụ: Họ Lý (李) sáng như vầng trăng (月) tròn."
+                className="w-full h-10 bg-[#161311] border border-[#2e2621] focus:border-[#df5343] rounded-xl px-3 text-xs text-[#d8cebe] placeholder-[#4e453e] focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Row 4: Câu ví dụ & Dịch nghĩa câu ví dụ */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
               <label className="block text-[11px] text-[#8e837a] mb-1 font-medium">
@@ -356,7 +395,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
           {/* Actions: AI Auto-fill & Submit Button */}
           <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#2a231e]">
             <p className="text-[11px] text-[#8e837a] hidden sm:block">
-              💡 Nhập 1 ô bất kỳ rồi bấm <strong>"AI Điền"</strong> để tự động hoàn thành 5 ô còn lại.
+              💡 Nhập 1 ô bất kỳ rồi bấm <strong>"AI Điền"</strong> để tự động phân tích chiết tự & 7 ô còn lại.
             </p>
 
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -856,6 +895,36 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                   onChange={(e) => setEditingWord({ ...editingWord, vietnamese: e.target.value })}
                   className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 text-xs text-[#d8cebe] focus:outline-none focus:border-[#df5343]"
                 />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-[#8e837a] mb-1 flex items-center gap-1">
+                    <span className="text-[#e5a044]">🧩</span>
+                    <span>Bộ thủ cấu thành</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingWord.radicals || ''}
+                    onChange={(e) => setEditingWord({ ...editingWord, radicals: e.target.value })}
+                    placeholder="Ví dụ: 女 (nữ) + 子 (tử)"
+                    className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 text-xs text-[#d8cebe] focus:outline-none focus:border-[#df5343]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-[#8e837a] mb-1 flex items-center gap-1">
+                    <span className="text-[#5eb786]">💡</span>
+                    <span>Mẹo nhớ / Chiết tự</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingWord.mnemonic || ''}
+                    onChange={(e) => setEditingWord({ ...editingWord, mnemonic: e.target.value })}
+                    placeholder="Ví dụ: Gia đình có con gái và con trai là tốt đẹp."
+                    className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 text-xs text-[#d8cebe] focus:outline-none focus:border-[#df5343]"
+                  />
+                </div>
               </div>
 
               <div>

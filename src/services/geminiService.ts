@@ -566,20 +566,29 @@ export class GeminiService {
       };
     }
 
-    const prompt = `Điền thông tin từ vựng tiếng Trung:
+    const prompt = `Bạn là chuyên gia ngôn ngữ tiếng Trung và giảng dạy HSK hàng đầu.
+Nhiệm vụ: Điền và phân tích chi tiết từ vựng tiếng Trung dựa trên dữ liệu đầu vào:
 Input: "${rawInput}"
 
-Trả về đúng JSON:
+Yêu cầu BẮT BUỘC:
+- "radicals": Liệt kê rõ các bộ thủ cấu thành chữ kèm tên bộ thủ tiếng Việt (ví dụ: "亻 (nhân đứng) + 尔 (nhĩ)" hoặc "氵 (thủy) + 口 (khẩu)").
+- "mnemonic": Viết mẹo nhớ cách nhìn / chiết tự hình tượng sinh động, dễ thuộc lòng ngay lập tức (ví dụ: "Người (亻) đối diện với mình (尔) chính là Bạn (你)." hoặc "Dùng miệng (口) uống nước (氵) thanh mát.").
+- "hanViet": Âm Hán Việt chuẩn xác.
+- "exampleSentence": 1 câu ví dụ giao tiếp tự nhiên ngắn gọn chứa từ này.
+- "examplePinyin": Pinyin có dấu thanh của câu ví dụ.
+- "exampleVietnamese": Dịch nghĩa câu ví dụ sang tiếng Việt.
+
+Trả về duy nhất chuỗi JSON chuẩn:
 {
-  "hanzi": "Chữ Hán giản thể",
-  "pinyin": "Pinyin có dấu thanh",
-  "vietnamese": "Nghĩa tiếng Việt ngắn",
+  "hanzi": "Chữ Hán giản thể chuẩn",
+  "pinyin": "Pinyin có dấu thanh điệu",
+  "vietnamese": "Nghĩa tiếng Việt ngắn gọn",
   "hanViet": "Âm Hán Việt",
   "exampleSentence": "Câu ví dụ ngắn",
   "examplePinyin": "Pinyin câu ví dụ",
   "exampleVietnamese": "Dịch câu ví dụ",
-  "radicals": "Bộ thủ",
-  "mnemonic": "Mẹo nhớ ngắn gọn",
+  "radicals": "Bộ thủ chi tiết",
+  "mnemonic": "Mẹo nhớ mặt chữ & chiết tự dễ thuộc",
   "hskLevel": 1
 }`;
 
@@ -596,23 +605,29 @@ Trả về đúng JSON:
     const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
     const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
 
-    const prompt = `Trích xuất từ vựng tiếng Trung từ văn bản sau:
+    const prompt = `Bạn là chuyên gia giảng dạy HSK. Trích xuất và phân tích đầy đủ từ vựng tiếng Trung từ văn bản sau:
 """
 ${rawText}
 """
 
-Trả về mảng JSON:
+Với MỖI từ vựng, BẮT BUỘC cung cấp:
+- "radicals": Liệt kê các bộ thủ cấu thành kèm giải nghĩa (ví dụ: "女 (nữ) + 子 (tử)").
+- "mnemonic": Mẹo nhớ mặt chữ / chiết tự hình tượng dễ thuộc lòng.
+- "hanViet": Âm Hán Việt.
+- "exampleSentence", "examplePinyin", "exampleVietnamese": Câu ví dụ ngắn gọn, pinyin và dịch nghĩa.
+
+Trả về mảng JSON chuẩn:
 [
   {
     "hanzi": "Chữ Hán",
-    "pinyin": "Pinyin",
+    "pinyin": "Pinyin có dấu thanh",
     "vietnamese": "Nghĩa tiếng Việt",
-    "hanViet": "Hán Việt",
+    "hanViet": "Âm Hán Việt",
     "exampleSentence": "Câu ví dụ",
     "examplePinyin": "Pinyin ví dụ",
     "exampleVietnamese": "Dịch ví dụ",
-    "radicals": "Bộ thủ",
-    "mnemonic": "Mẹo nhớ",
+    "radicals": "Bộ thủ cấu thành",
+    "mnemonic": "Mẹo nhớ mặt chữ sinh động",
     "hskLevel": 1
   }
 ]`;

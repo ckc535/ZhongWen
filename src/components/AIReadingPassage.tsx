@@ -717,63 +717,89 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
                 </button>
               </div>
 
-              {/* Grid of New Words */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {/* Grid of New Words with Rich Radicals & Mnemonics */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {story.newWordsDetected.map((nw, idx) => {
                   const isAdded = addedNewWordHanzis.has(nw.hanzi) || nw.isAlreadyAdded;
                   return (
                     <div
                       key={idx}
-                      className="p-2.5 rounded-2xl bg-[#161311] border border-[#2e2621] flex items-center justify-between gap-2"
+                      className="p-3 rounded-2xl bg-[#161311] border border-[#2e2621] space-y-2 hover:border-[#3d332c] transition-all"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            onClick={(e) => handlePlayWordAudio(e, nw.hanzi)}
-                            className="font-chinese text-lg font-bold text-[#f5ede4] hover:text-[#df5343] cursor-pointer"
-                          >
-                            {nw.hanzi}
-                          </span>
-                          <span className="text-xs font-bold text-[#f05d48]">
-                            {nw.pinyin}
-                          </span>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span
+                              onClick={(e) => handlePlayWordAudio(e, nw.hanzi)}
+                              className="font-chinese text-2xl font-bold text-[#f5ede4] hover:text-[#df5343] cursor-pointer"
+                            >
+                              {nw.hanzi}
+                            </span>
+                            <span className="text-xs font-bold text-[#f05d48]">
+                              {nw.pinyin}
+                            </span>
+                            {nw.hanViet && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#27211d] text-[#bfb5a7] border border-[#382f29]">
+                                {nw.hanViet}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#d8cebe] font-medium pt-0.5">
+                            {nw.vietnamese}
+                          </p>
                         </div>
-                        <p className="text-xs text-[#8e837a] truncate">
-                          {nw.vietnamese}
-                        </p>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={(e) => handlePlayWordAudio(e, nw.hanzi)}
+                            className="p-1.5 text-[#8e837a] hover:text-[#df5343] rounded-lg hover:bg-[#27211d]"
+                            title="Nghe phát âm"
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={(e) => handleAddNewWord(e, nw)}
+                            disabled={isAdded}
+                            className={`px-2.5 py-1 rounded-xl border text-xs transition-all ${
+                              isAdded
+                                ? 'bg-[#1e2a22] text-[#62ba89] border-[#2d4734] cursor-default'
+                                : 'bg-[#df5343]/20 hover:bg-[#df5343]/30 text-[#df5343] border-[#df5343]/40 active:scale-95'
+                            }`}
+                            title={isAdded ? 'Đã thêm vào kho từ' : 'Thêm vào kho từ'}
+                          >
+                            {isAdded ? (
+                              <span className="flex items-center gap-1 text-[11px] font-bold text-[#5eb786]">
+                                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>Đã thêm</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-[11px] font-bold text-[#df5343]">
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>+ Thêm</span>
+                              </span>
+                            )}
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={(e) => handlePlayWordAudio(e, nw.hanzi)}
-                          className="p-1 text-[#8e837a] hover:text-[#df5343]"
-                        >
-                          <Volume2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          onClick={(e) => handleAddNewWord(e, nw)}
-                          disabled={isAdded}
-                          className={`p-1.5 rounded-xl border text-xs transition-all ${
-                            isAdded
-                              ? 'bg-[#1e2a22] text-[#62ba89] border-[#2d4734] cursor-default'
-                              : 'bg-[#df5343]/20 hover:bg-[#df5343]/30 text-[#df5343] border-[#df5343]/40 active:scale-95'
-                          }`}
-                          title={isAdded ? 'Đã thêm' : 'Thêm vào kho từ'}
-                        >
-                          {isAdded ? (
-                            <span className="flex items-center gap-1 text-[11px] font-bold text-[#5eb786] px-1">
-                              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                              <span>Đã thêm</span>
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-[11px] font-bold text-[#df5343] px-1">
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Thêm</span>
-                            </span>
+                      {/* Radicals & Mnemonic breakdown */}
+                      {(nw.radicals || nw.mnemonic) && (
+                        <div className="p-2 rounded-xl bg-[#1f1a17] border border-[#2a221d] text-[11px] space-y-1">
+                          {nw.radicals && (
+                            <p className="text-[#bfb5a7]">
+                              <span className="text-[#e5a044] font-semibold">🧩 Bộ thủ:</span>{' '}
+                              <span>{nw.radicals}</span>
+                            </p>
                           )}
-                        </button>
-                      </div>
+                          {nw.mnemonic && (
+                            <p className="text-[#bfb5a7]">
+                              <span className="text-[#5eb786] font-semibold">💡 Mẹo nhớ:</span>{' '}
+                              <span>{nw.mnemonic}</span>
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
