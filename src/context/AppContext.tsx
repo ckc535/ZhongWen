@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { Word, UserProfile, UserWordProgress, AppSettings, StudyStats } from '../types';
 import { HSK1_LESSON_WORDS } from '../data/hsk1StarterWords';
+import { DEFAULT_DATABASE_WORDS, DEFAULT_DATABASE_USERS, DEFAULT_DATABASE_PROGRESS } from '../data/defaultDatabaseData';
 import { soundEffects } from '../services/soundEffects';
 import { ApiService } from '../services/apiService';
 import { GeminiService } from '../services/geminiService';
@@ -45,7 +46,7 @@ interface AppContextType {
 }
 
 const ENV_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
-const ENV_MODEL = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
+const ENV_MODEL = import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash';
 
 const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: ENV_API_KEY,
@@ -111,7 +112,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // ignore
     }
-    return HSK1_LESSON_WORDS.map(w => ({ ...w, source: 'hsk1' as const }));
+    return DEFAULT_DATABASE_WORDS;
   });
 
   // Users list
@@ -122,16 +123,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // ignore
     }
-    return [
-      {
-        id: 'user-1',
-        name: 'Người học 1',
-        avatar: '🐼',
-        streakDays: 1,
-        lastActiveDate: new Date().toISOString().split('T')[0],
-        createdAt: Date.now()
-      }
-    ];
+    return DEFAULT_DATABASE_USERS;
   });
 
   // Active current user (Starts as null if user has not selected yet)
@@ -160,7 +152,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // ignore
     }
-    return {};
+    return DEFAULT_DATABASE_PROGRESS;
   });
 
   // Settings
