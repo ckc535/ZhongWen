@@ -279,19 +279,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [allUserProgress, activeUserId]);
 
   // Combined words (Shared word definitions + active user's box, star, review counts)
+  // ALWAYS sorted by createdAt DESC (newest added words first)
   const words: Word[] = useMemo(() => {
-    return sharedWords.map(word => {
-      const prog = currentUserProgressMap[word.id];
-      return {
-        ...word,
-        box: prog?.box !== undefined ? prog.box : 1,
-        isStarred: prog?.isStarred !== undefined ? prog.isStarred : false,
-        reviewCount: prog?.reviewCount || 0,
-        correctCount: prog?.correctCount || 0,
-        wrongCount: prog?.wrongCount || 0,
-        lastReviewed: prog?.lastReviewed || undefined
-      };
-    });
+    return sharedWords
+      .map(word => {
+        const prog = currentUserProgressMap[word.id];
+        return {
+          ...word,
+          box: prog?.box !== undefined ? prog.box : 1,
+          isStarred: prog?.isStarred !== undefined ? prog.isStarred : false,
+          reviewCount: prog?.reviewCount || 0,
+          correctCount: prog?.correctCount || 0,
+          wrongCount: prog?.wrongCount || 0,
+          lastReviewed: prog?.lastReviewed || undefined
+        };
+      })
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [sharedWords, currentUserProgressMap]);
 
   // Counts
@@ -308,10 +311,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return now - w.lastReviewed >= boxDays * 24 * 60 * 60 * 1000;
   }).length;
 
-  // Add Word (Shared for all users)
+  // Add Word (Shared for all users - Prevent Duplicate Hanzis)
   const addWord = useCallback(async (newWord: Partial<Word>): Promise<Word> => {
+    const hanzi = newWord.hanzi?.trim() || '';
+    if (!hanzi) {
+      throw new Error('Chữ Hán không được để trống');
+    }
+
     const wordData: Partial<Word> = {
-      hanzi: newWord.hanzi?.trim() || '',
+      hanzi,
       pinyin: newWord.pinyin?.trim() || '',
       vietnamese: newWord.vietnamese?.trim() || '',
       hanViet: newWord.hanViet?.trim() || '',
@@ -341,45 +349,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isStarred: false,
       hskLevel: wordData.hskLevel || 1,
       lesson: wordData.lesson,
-      source: 'custom',
+      source: (newWord.source as any) || 'custom',
       reviewCount: 0,
       correctCount: 0,
       wrongCount: 0,
       createdAt: Date.now()
     };
 
-    setSharedWords(prev => [resultWord, ...prev]);
+    setSharedWords(prev => {
+      if (prev.some(w => w.hanzi === resultWord.hanzi)) {
+        return prev;
+      }
+      return [resultWord, ...prev];
+    });
+
     return resultWord;
   }, []);
 
-  // Add Batch Words
+  // Add Batch Words (Prevent Duplicate Hanzis)
   const addBatchWords = useCallback(async (newWordsList: Partial<Word>[]) => {
     const saved = await ApiService.addBatchWords(newWordsList);
     if (saved && saved.length > 0) {
-      setSharedWords(prev => [...saved, ...prev]);
+      setSharedWords(prev => {
+        const existingMap = new Map(prev.map(w => [w.hanzi, w]));
+        saved.forEach(w => {
+          if (w.hanzi) {
+            existingMap.set(w.hanzi, { ...existingMap.get(w.hanzi), ...w });
+          }
+        });
+        return Array.from(existingMap.values());
+      });
     } else {
-      const fallbackList: Word[] = newWordsList.map((item, idx) => ({
-        id: `batch-${Date.now()}-${idx}`,
-        hanzi: item.hanzi?.trim() || '',
-        pinyin: item.pinyin?.trim() || '',
-        vietnamese: item.vietnamese?.trim() || '',
-        hanViet: item.hanViet?.trim() || '',
-        box: 1,
-        isStarred: false,
-        hskLevel: item.hskLevel || 1,
-        lesson: item.lesson || 'Thêm hàng loạt AI',
-        source: (item.source as any) || 'ai',
-        exampleSentence: item.exampleSentence || '',
-        examplePinyin: item.examplePinyin || '',
-        exampleVietnamese: item.exampleVietnamese || '',
-        radicals: item.radicals || '',
-        mnemonic: item.mnemonic || '',
-        reviewCount: 0,
-        correctCount: 0,
-        wrongCount: 0,
-        createdAt: Date.now()
-      }));
-      setSharedWords(prev => [...fallbackList, ...prev]);
+      setSharedWords(prev => {
+        const existingMap = new Map(prev.map(w => [w.hanzi, w]));
+        newWordsList.forEach((item, idx) => {
+          const hanzi = item.hanzi?.trim();
+          if (hanzi && !existingMap.has(hanzi)) {
+            const fallback: Word = {
+              id: `batch-${Date.now()}-${idx}`,
+              hanzi,
+              pinyin: item.pinyin?.trim() || '',
+              vietnamese: item.vietnamese?.trim() || '',
+              hanViet: item.hanViet?.trim() || '',
+              box: 1,
+              isStarred: false,
+              hskLevel: item.hskLevel || 1,
+              lesson: item.lesson || 'Thêm hàng loạt AI',
+              source: (item.source as any) || 'ai',
+              exampleSentence: item.exampleSentence || '',
+              examplePinyin: item.examplePinyin || '',
+              exampleVietnamese: item.exampleVietnamese || '',
+              radicals: item.radicals || '',
+              mnemonic: item.mnemonic || '',
+              reviewCount: 0,
+              correctCount: 0,
+              wrongCount: 0,
+              createdAt: Date.now()
+            };
+            existingMap.set(hanzi, fallback);
+          }
+        });
+        return Array.from(existingMap.values());
+      });
     }
   }, []);
 

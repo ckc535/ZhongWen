@@ -802,7 +802,111 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
     );
   }
 
-  // 4. Test API Key
+  // 4. Custom Passage Analyzer (Interactive Tokens, Pinyin, Meaning & New Words Extraction)
+  public static async analyzeCustomPassageStream(
+    customText: string,
+    userWords: Word[],
+    apiKey?: string,
+    model?: string,
+    onStreamChunk?: (accumulatedText: string, latestChunk: string) => void
+  ): Promise<StoryPassage> {
+    const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
+    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
+
+    const allVocabularyList = userWords
+      .map(w => w.hanzi)
+      .slice(0, 150)
+      .join(', ');
+
+    const prompt = `Bạn là chuyên gia giảng dạy tiếng Trung và biên tập viên ngôn ngữ học.
+Nhiệm vụ: Hãy phân tích đoạn văn tiếng Trung do người dùng cung cấp sau đây thành bài học tương tác hoàn chỉnh.
+
+ĐOẠN VĂN TIẾNG TRUNG CỦA NGƯỜI DÙNG:
+"""
+${customText.trim()}
+"""
+
+DANH SÁCH TỪ VỰNG HỌC VIÊN ĐÃ HỌC:
+[${allVocabularyList}]
+
+⚠️ NGUYÊN TẮC BẮT BUỘC:
+1. "chineseText", "sentences[].chinese", và "tokens[].hanzi" BẮT BUỘC 100% PHẢI LÀ CHỮ HÁN GIẢN THỂ (ví dụ: 再见, 谢谢, 你好, 老师). TUYỆT ĐỐI KHÔNG ĐẶT PINYIN HOẶC CHỮ LA-TINH VÀO TRƯỜNG "chinese" HOẶC "hanzi".
+2. Tách đoạn văn thành các câu ("sentences") theo đúng mạch văn gốc của người dùng.
+3. Trong mỗi câu ("sentences"), tách thành các từ/cụm từ tương tác ("tokens"):
+   - "hanzi": Chữ Hán giản thể chuẩn của từ/cụm từ.
+   - "pinyin": Pinyin có dấu thanh điệu chuẩn xác (chú ý biến điệu nếu có).
+   - "vietnamese": Dịch nghĩa ngắn gọn phù hợp với ngữ cảnh câu.
+4. Nếu đoạn văn có dạng đối thoại (ví dụ có "A:", "B:", "李月：", "大卫:"), hãy trích xuất tên người nói vào trường "speaker".
+5. So sánh toàn bộ các từ trong bài với danh sách từ học viên đã học: Trích xuất tất cả các TỪ MỚI / TỪ HAY trong bài vào mảng "newWordsDetected" (kèm đầy đủ 8 trường: hanzi, pinyin, vietnamese, hanViet, radicals, mnemonic, exampleSentence, examplePinyin, exampleVietnamese).
+
+Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sau (không thêm bất kỳ văn bản nào ngoài JSON):
+{
+  "title": "Tiêu đề phù hợp bằng Chữ Hán",
+  "titlePinyin": "Pinyin tiêu đề",
+  "titleVietnamese": "Dịch tiêu đề tiếng Việt",
+  "chineseText": "Toàn bộ đoạn văn gốc bằng 100% Chữ Hán",
+  "pinyinText": "Pinyin toàn bài",
+  "vietnameseTranslation": "Dịch toàn bộ bài sang tiếng Việt",
+  "format": "article",
+  "sentences": [
+    {
+      "chinese": "Câu Chữ Hán",
+      "pinyin": "Pinyin câu",
+      "vietnamese": "Dịch câu tiếng Việt",
+      "speaker": "Tên người nói nếu có",
+      "tokens": [
+        { "hanzi": "chữ Hán", "pinyin": "pinyin", "vietnamese": "nghĩa ngắn" }
+      ]
+    }
+  ],
+  "newWordsDetected": [
+    {
+      "hanzi": "Chữ Hán từ mới",
+      "pinyin": "Pinyin có dấu",
+      "vietnamese": "Nghĩa tiếng Việt ngắn",
+      "hanViet": "Âm Hán Việt",
+      "radicals": "Bộ thủ cấu thành",
+      "mnemonic": "Mẹo nhớ mặt chữ ngắn gọn sinh động",
+      "exampleSentence": "Câu ví dụ ngắn chứa từ này",
+      "examplePinyin": "Pinyin câu ví dụ",
+      "exampleVietnamese": "Dịch câu ví dụ"
+    }
+  ]
+}`;
+
+    const raw = await GeminiService.callAiEngineStream(
+      envKey,
+      envModel,
+      prompt,
+      true,
+      onStreamChunk
+    );
+
+    const parsed = GeminiService.safeExtractAndParseJson(raw);
+
+    const knownSet = new Set(userWords.map(w => w.hanzi));
+    const processedNewWords: DetectedNewWord[] = (parsed.newWordsDetected || []).map((nw: DetectedNewWord) => ({
+      ...nw,
+      isAlreadyAdded: knownSet.has(nw.hanzi)
+    }));
+
+    return {
+      id: `story-custom-${Date.now()}`,
+      title: parsed.title || 'Đoạn văn tự nhập',
+      titlePinyin: parsed.titlePinyin || '',
+      titleVietnamese: parsed.titleVietnamese || '',
+      chineseText: parsed.chineseText || customText,
+      pinyinText: parsed.pinyinText || '',
+      vietnameseTranslation: parsed.vietnameseTranslation || '',
+      format: parsed.format || 'article',
+      sentences: parsed.sentences || [],
+      newWordsDetected: processedNewWords,
+      topic: 'Đoạn văn tự nhập',
+      createdAt: Date.now()
+    };
+  }
+
+  // 5. Test API Key
   public static async testGeminiApiKey(apiKey?: string, model?: string): Promise<boolean> {
     try {
       const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';

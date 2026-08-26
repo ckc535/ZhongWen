@@ -9,6 +9,14 @@ apiRouter.use(express.json());
 const router = express.Router();
 router.use(express.json());
 
+// Prevent any caching on API endpoints
+router.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 // 1. Health check
 router.get('/health', async (req, res) => {
   try {
@@ -19,11 +27,11 @@ router.get('/health', async (req, res) => {
   }
 });
 
-// 2. Get full database state
+// 2. Get full database state (Words sorted newest first)
 router.get('/data', async (req, res) => {
   try {
     const { db } = await connectToDatabase();
-    const words = await db.collection('words').find({}, { projection: { _id: 0 } }).toArray();
+    const words = await db.collection('words').find({}, { projection: { _id: 0 } }).sort({ createdAt: -1, _id: -1 }).toArray();
     const users = await db.collection('users').find({}, { projection: { _id: 0 } }).toArray();
     const progressList = await db.collection('user_progress').find({}, { projection: { _id: 0 } }).toArray();
     const settingsDoc = await db.collection('settings').findOne({ id: 'app_settings' }, { projection: { _id: 0 } });
@@ -56,25 +64,42 @@ router.get('/data', async (req, res) => {
   }
 });
 
-// 3. Get shared words
+// 3. Get shared words (Words sorted newest first)
 router.get('/words', async (req, res) => {
   try {
     const { db } = await connectToDatabase();
-    const words = await db.collection('words').find({}, { projection: { _id: 0 } }).toArray();
+    const words = await db.collection('words').find({}, { projection: { _id: 0 } }).sort({ createdAt: -1, _id: -1 }).toArray();
     res.json(words);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch words', details: err.message });
   }
 });
 
-// 4. Add a single shared word
+// 4. Add a single shared word (Prevent duplicates by Hanzi)
 router.post('/words', async (req, res) => {
   try {
     const { db } = await connectToDatabase();
     const wordData = req.body;
+    const hanzi = wordData.hanzi?.trim() || '';
+
+    if (!hanzi) {
+      return res.status(400).json({ error: 'Chữ Hán không được để trống' });
+    }
+
+    const wordsCol = db.collection('words');
+    const existing = await wordsCol.findOne({ hanzi });
+
+    if (existing) {
+      return res.status(409).json({
+        error: `Chữ "${hanzi}" đã tồn tại trong danh sách từ vựng!`,
+        code: 'WORD_ALREADY_EXISTS',
+        existingWord: existing
+      });
+    }
+
     const newWord = {
       id: wordData.id || `w-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      hanzi: wordData.hanzi?.trim() || '',
+      hanzi,
       pinyin: wordData.pinyin?.trim() || '',
       vietnamese: wordData.vietnamese?.trim() || '',
       hanViet: wordData.hanViet?.trim() || '',
@@ -94,7 +119,7 @@ router.post('/words', async (req, res) => {
       createdAt: wordData.createdAt || Date.now()
     };
 
-    await db.collection('words').insertOne(newWord);
+    await wordsCol.insertOne(newWord);
     const { _id, ...cleanWord } = newWord;
     res.status(201).json({ success: true, word: cleanWord });
   } catch (err) {
@@ -102,7 +127,7 @@ router.post('/words', async (req, res) => {
   }
 });
 
-// 5. Add batch words
+// 5. Add batch words (Filter out existing Hanzis to prevent duplicates)
 router.post('/words/batch', async (req, res) => {
   try {
     const { words: newWords } = req.body;
@@ -111,9 +136,31 @@ router.post('/words/batch', async (req, res) => {
     }
 
     const { db } = await connectToDatabase();
-    const formattedWords = newWords.map((w, index) => ({
+    const wordsCol = db.collection('words');
+
+    // Get all existing hanzis
+    const existingWords = await wordsCol.find({}, { projection: { hanzi: 1 } }).toArray();
+    const existingHanzis = new Set(existingWords.map(w => w.hanzi));
+
+    // Filter duplicates within incoming list and against database
+    const seenIncoming = new Set();
+    const uniqueIncoming = [];
+
+    for (const w of newWords) {
+      const hanzi = w.hanzi?.trim();
+      if (hanzi && !existingHanzis.has(hanzi) && !seenIncoming.has(hanzi)) {
+        seenIncoming.add(hanzi);
+        uniqueIncoming.push(w);
+      }
+    }
+
+    if (uniqueIncoming.length === 0) {
+      return res.json({ success: true, count: 0, words: [] });
+    }
+
+    const formattedWords = uniqueIncoming.map((w, index) => ({
       id: w.id || `w-batch-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 5)}`,
-      hanzi: w.hanzi?.trim() || '',
+      hanzi: w.hanzi.trim(),
       pinyin: w.pinyin?.trim() || '',
       vietnamese: w.vietnamese?.trim() || '',
       hanViet: w.hanViet?.trim() || '',
@@ -130,10 +177,10 @@ router.post('/words/batch', async (req, res) => {
       reviewCount: 0,
       correctCount: 0,
       wrongCount: 0,
-      createdAt: Date.now()
+      createdAt: Date.now() + index
     }));
 
-    await db.collection('words').insertMany(formattedWords);
+    await wordsCol.insertMany(formattedWords);
     res.status(201).json({ success: true, count: formattedWords.length, words: formattedWords });
   } catch (err) {
     res.status(500).json({ error: 'Failed to add batch words', details: err.message });

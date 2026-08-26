@@ -33,10 +33,13 @@ export class ApiService {
         body: JSON.stringify(word)
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Lỗi khi thêm từ');
+      }
       return data.word || null;
     } catch (err) {
       console.error('addWord error:', err);
-      return null;
+      throw err;
     }
   }
 

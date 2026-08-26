@@ -168,38 +168,51 @@ export const WordManagement: React.FC<WordManagementProps> = ({
   };
 
   // Handle Add Single Word with all 8 rich fields
-  const handleAddWordSubmit = (e: React.FormEvent) => {
+  const handleAddWordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputHanzi.trim() && !inputVietnamese.trim()) {
+    const hanziTrimmed = inputHanzi.trim();
+
+    if (!hanziTrimmed && !inputVietnamese.trim()) {
       setAiError('Vui lòng nhập Chữ Hán hoặc Nghĩa tiếng Việt');
       return;
     }
 
-    addWord({
-      hanzi: inputHanzi.trim() || '?',
-      pinyin: inputPinyin.trim() || '',
-      hanViet: inputHanViet.trim() || '',
-      vietnamese: inputVietnamese.trim() || '',
-      radicals: inputRadicals.trim() || '',
-      mnemonic: inputMnemonic.trim() || '',
-      exampleSentence: inputExampleSentence.trim() || '',
-      exampleVietnamese: inputExampleVietnamese.trim() || '',
-      box: 1,
-      isStarred: false,
-      source: 'custom',
-      lesson: 'Từ tự thêm'
-    });
+    if (hanziTrimmed && words.some(w => w.hanzi === hanziTrimmed)) {
+      setAiError(`Chữ "${hanziTrimmed}" đã có sẵn trong danh sách từ vựng rồi!`);
+      soundEffects.playWrong();
+      return;
+    }
 
-    soundEffects.playSuccess();
-    setInputHanzi('');
-    setInputPinyin('');
-    setInputHanViet('');
-    setInputVietnamese('');
-    setInputRadicals('');
-    setInputMnemonic('');
-    setInputExampleSentence('');
-    setInputExampleVietnamese('');
-    setAiError(null);
+    try {
+      await addWord({
+        hanzi: hanziTrimmed || '?',
+        pinyin: inputPinyin.trim() || '',
+        hanViet: inputHanViet.trim() || '',
+        vietnamese: inputVietnamese.trim() || '',
+        radicals: inputRadicals.trim() || '',
+        mnemonic: inputMnemonic.trim() || '',
+        exampleSentence: inputExampleSentence.trim() || '',
+        exampleVietnamese: inputExampleVietnamese.trim() || '',
+        box: 1,
+        isStarred: false,
+        source: 'custom',
+        lesson: 'Từ tự thêm'
+      });
+
+      soundEffects.playSuccess();
+      setInputHanzi('');
+      setInputPinyin('');
+      setInputHanViet('');
+      setInputVietnamese('');
+      setInputRadicals('');
+      setInputMnemonic('');
+      setInputExampleSentence('');
+      setInputExampleVietnamese('');
+      setAiError(null);
+    } catch (err: any) {
+      setAiError(err.message || 'Lỗi khi thêm từ');
+      soundEffects.playWrong();
+    }
   };
 
   // Handle Status Option Select (Chưa thuộc / Đã thuộc / Từ khó)
@@ -234,29 +247,31 @@ export const WordManagement: React.FC<WordManagementProps> = ({
   const masteredCount = categoryWords.filter(w => w.box >= 5).length;
   const starredCount = categoryWords.filter(w => w.isStarred).length;
 
-  // 2. Filtered words list (applying search query and status filter)
-  const filteredWords = categoryWords.filter(word => {
-    // Search query match
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchHanzi = word.hanzi.toLowerCase().includes(q);
-      const matchPinyin = word.pinyin.toLowerCase().includes(q);
-      const matchVi = word.vietnamese.toLowerCase().includes(q);
-      const matchHanViet = word.hanViet ? word.hanViet.toLowerCase().includes(q) : false;
-      if (!matchHanzi && !matchPinyin && !matchVi && !matchHanViet) return false;
-    }
+  // 2. Filtered words list (applying search query, status filter, and sorted newest first)
+  const filteredWords = categoryWords
+    .filter(word => {
+      // Search query match
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchHanzi = word.hanzi.toLowerCase().includes(q);
+        const matchPinyin = word.pinyin.toLowerCase().includes(q);
+        const matchVi = word.vietnamese.toLowerCase().includes(q);
+        const matchHanViet = word.hanViet ? word.hanViet.toLowerCase().includes(q) : false;
+        if (!matchHanzi && !matchPinyin && !matchVi && !matchHanViet) return false;
+      }
 
-    // Status filter (Tất cả / Chưa thuộc / Đã thuộc / Từ khó)
-    if (filterStatus === 'unmastered') {
-      if (word.box >= 5) return false;
-    } else if (filterStatus === 'mastered') {
-      if (word.box < 5) return false;
-    } else if (filterStatus === 'starred') {
-      if (!word.isStarred) return false;
-    }
+      // Status filter (Tất cả / Chưa thuộc / Đã thuộc / Từ khó)
+      if (filterStatus === 'unmastered') {
+        if (word.box >= 5) return false;
+      } else if (filterStatus === 'mastered') {
+        if (word.box < 5) return false;
+      } else if (filterStatus === 'starred') {
+        if (!word.isStarred) return false;
+      }
 
-    return true;
-  });
+      return true;
+    })
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   // Pagination calculation
   const totalItems = filteredWords.length;

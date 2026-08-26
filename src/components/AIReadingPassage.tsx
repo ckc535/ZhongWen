@@ -22,7 +22,8 @@ import {
   FileText,
   Sliders,
   Terminal,
-  Cpu
+  Cpu,
+  Edit3
 } from 'lucide-react';
 
 interface AIReadingPassageProps {
@@ -67,6 +68,10 @@ function extractReadableChinesePreview(raw: string): string {
 
 export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStrokeWriter }) => {
   const { words, addWord, addBatchWords, settings } = useApp();
+
+  // Mode: AI sinh tự động vs Tự nhập đoạn văn
+  const [entryMode, setEntryMode] = useState<'ai-generate' | 'custom-input'>('ai-generate');
+  const [customPassageText, setCustomPassageText] = useState<string>('');
 
   const [selectedTopic, setSelectedTopic] = useState<string>(TOPICS[0]);
   const [customTopic, setCustomTopic] = useState<string>('');
@@ -163,6 +168,49 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
     }
   };
 
+  const handleAnalyzeCustomPassage = async () => {
+    if (!customPassageText.trim()) {
+      setError('Vui lòng nhập hoặc dán đoạn văn tiếng Trung để AI phân tích.');
+      return;
+    }
+
+    const envApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+    const envModel = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
+
+    setIsStreaming(true);
+    setStreamProgressText('');
+    setStreamStage('⚡ AI đang phân tích cấu trúc ngữ pháp, Pinyin, từ vựng và chiết tự...');
+    setError(null);
+    tts.stop();
+    setIsPlayingAudio(false);
+    setAddedNewWordHanzis(new Set());
+
+    try {
+      const result = await GeminiService.analyzeCustomPassageStream(
+        customPassageText.trim(),
+        words,
+        envApiKey,
+        envModel,
+        (accumulatedText) => {
+          setStreamProgressText(accumulatedText);
+          if (accumulatedText.length > 30) {
+            setStreamStage('✍️ AI đang giải nghĩa chi tiết từng câu và trích xuất từ mới...');
+          }
+        }
+      );
+
+      setStory(result);
+      soundEffects.playSuccess();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Lỗi khi phân tích đoạn văn';
+      setError(msg);
+      soundEffects.playWrong();
+    } finally {
+      setIsStreaming(false);
+      setStreamProgressText('');
+    }
+  };
+
   // Play audio for entire passage
   const handlePlayPassageAudio = () => {
     if (!story) return;
@@ -191,32 +239,38 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
     tts.speak(hanzi, settings.voiceRate, settings.voicePitch);
   };
 
-  // Add individual new word to vocabulary list
+  // Add individual new word to vocabulary list (Prevent duplicates)
   const handleAddNewWord = (e: React.MouseEvent, newWord: DetectedNewWord) => {
     e.stopPropagation();
     e.preventDefault();
 
-    // 1. Add word to context / shared database with all rich fields
-    addWord({
-      hanzi: newWord.hanzi,
-      pinyin: newWord.pinyin,
-      vietnamese: newWord.vietnamese,
-      hanViet: newWord.hanViet || '',
-      radicals: newWord.radicals || '',
-      mnemonic: newWord.mnemonic || '',
-      exampleSentence: newWord.exampleSentence || '',
-      examplePinyin: newWord.examplePinyin || '',
-      exampleVietnamese: newWord.exampleVietnamese || '',
-      box: 1,
-      isStarred: false,
-      source: 'ai',
-      lesson: `Từ mới: ${story?.title || 'Đoạn văn AI'}`
-    });
+    const isAlreadyInDb = words.some(w => w.hanzi === newWord.hanzi);
 
-    // 2. Mark this word as added in local state
+    if (!isAlreadyInDb) {
+      addWord({
+        hanzi: newWord.hanzi,
+        pinyin: newWord.pinyin,
+        vietnamese: newWord.vietnamese,
+        hanViet: newWord.hanViet || '',
+        radicals: newWord.radicals || '',
+        mnemonic: newWord.mnemonic || '',
+        exampleSentence: newWord.exampleSentence || '',
+        examplePinyin: newWord.examplePinyin || '',
+        exampleVietnamese: newWord.exampleVietnamese || '',
+        box: 1,
+        isStarred: false,
+        source: 'ai',
+        lesson: `Từ mới: ${story?.title || 'Đoạn văn AI'}`
+      });
+      soundEffects.playSuccess();
+    } else {
+      soundEffects.playClick();
+    }
+
+    // Mark this word as added in local state
     setAddedNewWordHanzis(prev => new Set(prev).add(newWord.hanzi));
 
-    // 3. Update story state without clearing it
+    // Update story state without clearing it
     setStory(prevStory => {
       if (!prevStory) return null;
       return {
@@ -226,19 +280,18 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
         )
       };
     });
-
-    soundEffects.playSuccess();
   };
 
-  // Add all detected new words at once
+  // Add all detected new words at once (Prevent duplicates)
   const handleAddAllNewWords = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
 
     if (!story || story.newWordsDetected.length === 0) return;
 
+    const existingSet = new Set(words.map(w => w.hanzi));
     const unadded = story.newWordsDetected.filter(
-      nw => !addedNewWordHanzis.has(nw.hanzi) && !nw.isAlreadyAdded
+      nw => !addedNewWordHanzis.has(nw.hanzi) && !nw.isAlreadyAdded && !existingSet.has(nw.hanzi)
     );
 
     if (unadded.length > 0) {
@@ -259,22 +312,23 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
           lesson: `Từ mới: ${story.title}`
         }))
       );
-
-      const allHanzis = new Set(addedNewWordHanzis);
-      unadded.forEach(nw => allHanzis.add(nw.hanzi));
-      setAddedNewWordHanzis(allHanzis);
-
-      setStory(prevStory => {
-        if (!prevStory) return null;
-        return {
-          ...prevStory,
-          newWordsDetected: prevStory.newWordsDetected.map(nw => ({ ...nw, isAlreadyAdded: true }))
-        };
-      });
-
       soundEffects.playLevelUp();
       confetti({ particleCount: 50, spread: 60 });
+    } else {
+      soundEffects.playClick();
     }
+
+    const allHanzis = new Set(addedNewWordHanzis);
+    story.newWordsDetected.forEach(nw => allHanzis.add(nw.hanzi));
+    setAddedNewWordHanzis(allHanzis);
+
+    setStory(prevStory => {
+      if (!prevStory) return null;
+      return {
+        ...prevStory,
+        newWordsDetected: prevStory.newWordsDetected.map(nw => ({ ...nw, isAlreadyAdded: true }))
+      };
+    });
   };
 
   // Clear current story and return to setup
@@ -290,201 +344,307 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
     <div className="w-full max-w-3xl mx-auto px-4 py-1 space-y-4">
       {/* ================= TOP SECTION: CẤU HÌNH & TẠO ĐOẠN VĂN AI ================= */}
       <div className="p-6 rounded-3xl bg-[#1f1a17] border border-[#2e2621] space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xs font-bold uppercase tracking-wider text-[#5eb786] flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              LUYỆN ĐỌC ĐOẠN VĂN AI (STREAMING)
-            </h2>
-            <p className="text-xs text-[#8e837a]">
-              Ghép các chữ bạn đang học thành bài đọc thú vị theo chủ đề bạn chọn
-            </p>
-          </div>
-
-          <select
-            value={level}
-            onChange={(e) => setLevel(e.target.value)}
-            className="bg-[#161311] border border-[#2e2621] text-[11px] text-[#d8cebe] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-[#df5343]"
+        {/* MODE SWITCHER: AI TẠO THEO CHỦ ĐỀ vs TỰ NHẬP ĐOẠN VĂN */}
+        <div className="flex rounded-2xl bg-[#161311] p-1 border border-[#2e2621]">
+          <button
+            type="button"
+            onClick={() => {
+              setEntryMode('ai-generate');
+              setError(null);
+            }}
+            className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              entryMode === 'ai-generate'
+                ? 'bg-[#df5343] text-white shadow-md'
+                : 'text-[#8e837a] hover:text-[#d8cebe]'
+            }`}
           >
-            <option value="Sơ cấp HSK 1-2">Sơ cấp HSK 1-2</option>
-            <option value="Trung cấp HSK 3-4">Trung cấp HSK 3-4</option>
-          </select>
-        </div>
-
-        {/* 1. THỂ LOẠI: ĐỐI THOẠI vs VĂN XUÔI / BÀI BÁO */}
-        <div className="space-y-1.5">
-          <label className="block text-xs font-semibold text-[#8e837a]">
-            Chọn thể loại bài đọc:
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => setFormat('dialogue')}
-              className={`py-2.5 px-3 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 ${
-                format === 'dialogue'
-                  ? 'bg-[#df5343] text-white border-[#df5343] shadow-md'
-                  : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>💬 Đoạn đối thoại (Hội thoại)</span>
-            </button>
-
-            <button
-              onClick={() => setFormat('article')}
-              className={`py-2.5 px-3 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 ${
-                format === 'article'
-                  ? 'bg-[#df5343] text-white border-[#df5343] shadow-md'
-                  : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>📰 Đoạn văn xuôi / Bài báo</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 2. ĐỘ DÀI ĐOẠN VĂN (CUSTOM SỐ TỪ) */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-[#8e837a] flex items-center gap-1">
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Độ dài đoạn văn:</span>
-            </label>
-            <span className="text-[11px] text-[#e5a044]">
-              {lengthMode === 'short' && 'Khoảng 30 – 45 chữ (3 – 4 câu)'}
-              {lengthMode === 'medium' && 'Mặc định: Khoảng 50 – 75 chữ (5 – 7 câu)'}
-              {lengthMode === 'long' && 'Khoảng 85 – 130 chữ (8 – 12 câu)'}
-              {lengthMode === 'custom' && `Tùy chỉnh: ~${customWordCount} chữ`}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {/* 1. Ngắn */}
-            <button
-              onClick={() => setLengthMode('short')}
-              className={`p-2.5 rounded-2xl text-center border transition-all cursor-pointer ${
-                lengthMode === 'short'
-                  ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] shadow-sm'
-                  : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
-              }`}
-            >
-              <span className="block text-xs font-bold">⚡ Ngắn</span>
-              <span className="block text-[10px] opacity-80 mt-0.5">(~35 từ)</span>
-            </button>
-
-            {/* 2. Vừa */}
-            <button
-              onClick={() => setLengthMode('medium')}
-              className={`p-2.5 rounded-2xl text-center border transition-all cursor-pointer ${
-                lengthMode === 'medium'
-                  ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] shadow-sm'
-                  : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
-              }`}
-            >
-              <span className="block text-xs font-bold">📖 Vừa</span>
-              <span className="block text-[10px] opacity-80 mt-0.5">(~60 từ)</span>
-            </button>
-
-            {/* 3. Dài */}
-            <button
-              onClick={() => setLengthMode('long')}
-              className={`p-2.5 rounded-2xl text-center border transition-all cursor-pointer ${
-                lengthMode === 'long'
-                  ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] shadow-sm'
-                  : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
-              }`}
-            >
-              <span className="block text-xs font-bold">📜 Dài</span>
-              <span className="block text-[10px] opacity-80 mt-0.5">(~100 từ)</span>
-            </button>
-
-            {/* 4. Tùy chỉnh */}
-            <div
-              className={`p-2.5 rounded-2xl text-center border transition-all flex flex-col items-center justify-center ${
-                lengthMode === 'custom'
-                  ? 'bg-[#33261a] border-[#553c24] shadow-sm'
-                  : 'bg-[#161311] border-[#2e2621]'
-              }`}
-            >
-              <button
-                onClick={() => setLengthMode('custom')}
-                className={`text-xs font-bold block cursor-pointer ${
-                  lengthMode === 'custom' ? 'text-[#e5a044]' : 'text-[#8e837a] hover:text-[#d8cebe]'
-                }`}
-              >
-                ✏️ Tự chỉnh
-              </button>
-              <div className="flex items-center justify-center gap-1 mt-0.5">
-                <input
-                  type="number"
-                  min={20}
-                  max={300}
-                  value={customWordCount}
-                  onChange={(e) => {
-                    setLengthMode('custom');
-                    setCustomWordCount(Math.max(10, parseInt(e.target.value) || 50));
-                  }}
-                  className="w-12 bg-[#1f1a17] text-center border border-[#3e3228] rounded-lg text-xs font-bold text-[#f5ede4] py-0.5 focus:outline-none focus:border-[#df5343]"
-                />
-                <span className="text-[10px] text-[#8e837a]">từ</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. CHỦ ĐỀ GỢI Ý */}
-        <div className="space-y-1.5">
-          <label className="block text-xs font-semibold text-[#8e837a]">
-            Chọn chủ đề:
-          </label>
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar text-xs">
-            {TOPICS.map((topic) => (
-              <button
-                key={topic}
-                onClick={() => {
-                  setSelectedTopic(topic);
-                  setCustomTopic('');
-                }}
-                className={`px-3 py-1.5 rounded-xl text-[11px] font-medium border transition-all whitespace-nowrap ${
-                  selectedTopic === topic && !customTopic
-                    ? 'bg-[#33261a] text-[#e5a044] border-[#553c24]'
-                    : 'bg-[#161311] text-[#8e837a] border-[#2e2621]'
-                }`}
-              >
-                {topic}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 4. Ô NHẬP CHỦ ĐỀ TỰ DO & NÚT TẠO */}
-        <div className="flex flex-col sm:flex-row gap-2 pt-1">
-          <input
-            type="text"
-            value={customTopic}
-            onChange={(e) => setCustomTopic(e.target.value)}
-            placeholder="Hoặc tự nhập chủ đề (ví dụ: Chú mèo nhỏ tìm bạn, Đi mua trà sữa...)"
-            className="flex-1 h-11 bg-[#161311] border border-[#2e2621] focus:border-[#df5343] rounded-2xl px-3.5 text-xs text-[#d8cebe] placeholder-[#6b625b] focus:outline-none"
-          />
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>AI Tạo Bài Đọc Theo Chủ Đề</span>
+          </button>
 
           <button
-            onClick={handleGenerateStory}
-            disabled={isStreaming}
-            className="h-11 px-6 rounded-2xl bg-[#df5343] hover:bg-[#eb5f50] text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-50 active:scale-95"
+            type="button"
+            onClick={() => {
+              setEntryMode('custom-input');
+              setError(null);
+            }}
+            className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              entryMode === 'custom-input'
+                ? 'bg-[#df5343] text-white shadow-md'
+                : 'text-[#8e837a] hover:text-[#d8cebe]'
+            }`}
           >
-            {isStreaming ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>AI đang streaming...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                <span>✨ Tạo đoạn văn mới</span>
-              </>
-            )}
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>Tự Nhập & Phân Tích Đoạn Văn</span>
           </button>
         </div>
+
+        {/* ================= MODE 1: AI GENERATE ================= */}
+        {entryMode === 'ai-generate' && (
+          <div className="space-y-4 pt-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#5eb786] flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  TÙY CHỌN BÀI ĐỌC TỰ ĐỘNG
+                </h3>
+                <p className="text-xs text-[#8e837a]">
+                  AI tự động lồng ghép các từ bạn đang học vào một câu chuyện thú vị
+                </p>
+              </div>
+
+              <select
+                value={level}
+                onChange={(e) => setLevel(e.target.value)}
+                className="bg-[#161311] border border-[#2e2621] text-[11px] text-[#d8cebe] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-[#df5343]"
+              >
+                <option value="Sơ cấp HSK 1-2">Sơ cấp HSK 1-2</option>
+                <option value="Trung cấp HSK 3-4">Trung cấp HSK 3-4</option>
+              </select>
+            </div>
+
+            {/* 1. THỂ LOẠI: ĐỐI THOẠI vs VĂN XUÔI / BÀI BÁO */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-[#8e837a]">
+                Chọn thể loại bài đọc:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFormat('dialogue')}
+                  className={`py-2.5 px-3 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    format === 'dialogue'
+                      ? 'bg-[#df5343] text-white border-[#df5343] shadow-md'
+                      : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>💬 Đoạn đối thoại (Hội thoại)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFormat('article')}
+                  className={`py-2.5 px-3 rounded-2xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    format === 'article'
+                      ? 'bg-[#df5343] text-white border-[#df5343] shadow-md'
+                      : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
+                  }`}
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>📰 Đoạn văn xuôi / Bài báo</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. ĐỘ DÀI ĐOẠN VĂN (CUSTOM SỐ TỪ) */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-[#8e837a] flex items-center gap-1">
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Độ dài đoạn văn:</span>
+                </label>
+                <span className="text-[11px] text-[#e5a044]">
+                  {lengthMode === 'short' && 'Khoảng 30 – 45 chữ (3 – 4 câu)'}
+                  {lengthMode === 'medium' && 'Mặc định: Khoảng 50 – 75 chữ (5 – 7 câu)'}
+                  {lengthMode === 'long' && 'Khoảng 85 – 130 chữ (8 – 12 câu)'}
+                  {lengthMode === 'custom' && `Tùy chỉnh: ~${customWordCount} chữ`}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {/* 1. Ngắn */}
+                <button
+                  type="button"
+                  onClick={() => setLengthMode('short')}
+                  className={`p-2.5 rounded-2xl text-center border transition-all cursor-pointer ${
+                    lengthMode === 'short'
+                      ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] shadow-sm'
+                      : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
+                  }`}
+                >
+                  <span className="block text-xs font-bold">⚡ Ngắn</span>
+                  <span className="block text-[10px] opacity-80 mt-0.5">(~35 từ)</span>
+                </button>
+
+                {/* 2. Vừa */}
+                <button
+                  type="button"
+                  onClick={() => setLengthMode('medium')}
+                  className={`p-2.5 rounded-2xl text-center border transition-all cursor-pointer ${
+                    lengthMode === 'medium'
+                      ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] shadow-sm'
+                      : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
+                  }`}
+                >
+                  <span className="block text-xs font-bold">📖 Vừa</span>
+                  <span className="block text-[10px] opacity-80 mt-0.5">(~60 từ)</span>
+                </button>
+
+                {/* 3. Dài */}
+                <button
+                  type="button"
+                  onClick={() => setLengthMode('long')}
+                  className={`p-2.5 rounded-2xl text-center border transition-all cursor-pointer ${
+                    lengthMode === 'long'
+                      ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] shadow-sm'
+                      : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
+                  }`}
+                >
+                  <span className="block text-xs font-bold">📜 Dài</span>
+                  <span className="block text-[10px] opacity-80 mt-0.5">(~100 từ)</span>
+                </button>
+
+                {/* 4. Tùy chỉnh */}
+                <div
+                  className={`p-2.5 rounded-2xl text-center border transition-all flex flex-col items-center justify-center ${
+                    lengthMode === 'custom'
+                      ? 'bg-[#33261a] border-[#553c24] shadow-sm'
+                      : 'bg-[#161311] border-[#2e2621]'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setLengthMode('custom')}
+                    className={`text-xs font-bold block cursor-pointer ${
+                      lengthMode === 'custom' ? 'text-[#e5a044]' : 'text-[#8e837a] hover:text-[#d8cebe]'
+                    }`}
+                  >
+                    ✏️ Tự chỉnh
+                  </button>
+                  <div className="flex items-center justify-center gap-1 mt-0.5">
+                    <input
+                      type="number"
+                      min={20}
+                      max={300}
+                      value={customWordCount}
+                      onChange={(e) => {
+                        setLengthMode('custom');
+                        setCustomWordCount(Math.max(10, parseInt(e.target.value) || 50));
+                      }}
+                      className="w-12 bg-[#1f1a17] text-center border border-[#3e3228] rounded-lg text-xs font-bold text-[#f5ede4] py-0.5 focus:outline-none focus:border-[#df5343]"
+                    />
+                    <span className="text-[10px] text-[#8e837a]">từ</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. CHỦ ĐỀ GỢI Ý */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-[#8e837a]">
+                Chọn chủ đề:
+              </label>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar text-xs">
+                {TOPICS.map((topic) => (
+                  <button
+                    key={topic}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTopic(topic);
+                      setCustomTopic('');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-medium border transition-all whitespace-nowrap cursor-pointer ${
+                      selectedTopic === topic && !customTopic
+                        ? 'bg-[#33261a] text-[#e5a044] border-[#553c24]'
+                        : 'bg-[#161311] text-[#8e837a] border-[#2e2621]'
+                    }`}
+                  >
+                    {topic}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 4. Ô NHẬP CHỦ ĐỀ TỰ DO & NÚT TẠO */}
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <input
+                type="text"
+                value={customTopic}
+                onChange={(e) => setCustomTopic(e.target.value)}
+                placeholder="Hoặc tự nhập chủ đề (ví dụ: Chú mèo nhỏ tìm bạn, Đi mua trà sữa...)"
+                className="flex-1 h-11 bg-[#161311] border border-[#2e2621] focus:border-[#df5343] rounded-2xl px-3.5 text-xs text-[#d8cebe] placeholder-[#6b625b] focus:outline-none"
+              />
+
+              <button
+                type="button"
+                onClick={handleGenerateStory}
+                disabled={isStreaming}
+                className="h-11 px-6 rounded-2xl bg-[#df5343] hover:bg-[#eb5f50] text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-50 active:scale-95 cursor-pointer"
+              >
+                {isStreaming ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>AI đang streaming...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>✨ Tạo đoạn văn mới</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================= MODE 2: CUSTOM PASSAGE INPUT & ANALYZER ================= */}
+        {entryMode === 'custom-input' && (
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#e5a044] flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  TỰ NHẬP ĐOẠN VĂN TIẾNG TRUNG
+                </h3>
+                <p className="text-xs text-[#8e837a]">
+                  Dán bất kỳ đoạn văn, tin tức, đoạn thoại nào để AI phân tích chi tiết từng từ & câu
+                </p>
+              </div>
+
+              <span className="text-[11px] text-[#8e837a] font-mono bg-[#161311] px-2.5 py-1 rounded-xl border border-[#2e2621]">
+                {customPassageText.trim().length} ký tự
+              </span>
+            </div>
+
+            <textarea
+              rows={6}
+              value={customPassageText}
+              onChange={(e) => setCustomPassageText(e.target.value)}
+              placeholder="Dán hoặc gõ đoạn văn tiếng Trung vào đây (Ví dụ: 你好！我是大卫，我是美国人。今天天气很好，我和朋友一起去饭店吃饭。李月说：你想吃什么？...)"
+              className="w-full bg-[#161311] border border-[#2e2621] focus:border-[#df5343] rounded-2xl p-4 font-chinese text-base text-[#f5ede4] placeholder:text-[#5a4e44] focus:outline-none resize-y transition-colors leading-relaxed"
+            />
+
+            <div className="p-3.5 rounded-2xl bg-[#161311] border border-[#2e2621] text-[11px] text-[#8e837a] space-y-1">
+              <p className="font-semibold text-[#d8cebe] flex items-center gap-1.5">
+                <span className="text-[#5eb786]">✨</span>
+                <span>AI sẽ tự động xử lý và phân tích:</span>
+              </p>
+              <p>• Tách từng câu chuẩn xác, tự động gán Pinyin có dấu và dịch nghĩa toàn bài sang tiếng Việt.</p>
+              <p>• Biến từng từ thành tương tác: Rê chuột để xem Pinyin + Nghĩa, bấm vào để nghe phát âm giọng chuẩn.</p>
+              <p>• Tự động đối chiếu với kho từ bạn đã học, lọc ra tất cả các <strong>Từ Mới</strong> (kèm Âm Hán Việt, Bộ thủ 🧩 và Mẹo nhớ 💡) để bạn thêm vào kho học SRS chỉ với 1 cú click!</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAnalyzeCustomPassage}
+              disabled={isStreaming || !customPassageText.trim()}
+              className="w-full h-11 px-6 rounded-2xl bg-[#df5343] hover:bg-[#eb5f50] text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-50 active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+            >
+              {isStreaming ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>AI đang phân tích đoạn văn...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>✨ Phân Tích Đoạn Văn Với AI</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         {error && (
           <p className="text-xs text-[#e05344] bg-[#2b1917] p-2.5 rounded-xl border border-[#4d2522] flex items-center gap-2">
