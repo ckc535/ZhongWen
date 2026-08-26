@@ -111,6 +111,14 @@ export interface AppSettings {
   dailyTarget: number;
 }
 
+export interface HskLessonPackage {
+  lessonNumber: number;
+  title: string;
+  hanziTitle: string;
+  description: string;
+  words: Omit<Word, 'box' | 'isStarred' | 'reviewCount' | 'correctCount' | 'wrongCount' | 'createdAt'>[];
+}
+
 export interface StudyStats {
   streakDays: number;
   lastActiveDate: string;

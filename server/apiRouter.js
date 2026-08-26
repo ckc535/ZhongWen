@@ -1,259 +1,366 @@
 import express from 'express';
-import { readDatabase, writeDatabase } from './db.js';
-import { HSK1_LESSON_WORDS } from '../src/data/hsk1StarterWords.js';
+import { connectToDatabase } from './mongodb.js';
+import { HSK1_ALL_LESSONS } from './hsk1StarterData.js';
 
 export const apiRouter = express();
 
 apiRouter.use(express.json());
 
-// Support both /api/... and /...
 const router = express.Router();
-
 router.use(express.json());
 
 // 1. Health check
-router.get('/health', (req, res) => {
-  res.json({ status: 'ok', time: Date.now() });
+router.get('/health', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    res.json({ status: 'ok', database: 'mongodb', time: Date.now() });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
 });
 
 // 2. Get full database state
-router.get('/data', (req, res) => {
-  const db = readDatabase();
-  res.json(db);
+router.get('/data', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const words = await db.collection('words').find({}, { projection: { _id: 0 } }).toArray();
+    const users = await db.collection('users').find({}, { projection: { _id: 0 } }).toArray();
+    const progressList = await db.collection('user_progress').find({}, { projection: { _id: 0 } }).toArray();
+    const settingsDoc = await db.collection('settings').findOne({ id: 'app_settings' }, { projection: { _id: 0 } });
+
+    // Map user progress to { [userId]: { [wordId]: progress } }
+    const userProgress = {};
+    for (const item of progressList) {
+      if (!userProgress[item.userId]) {
+        userProgress[item.userId] = {};
+      }
+      userProgress[item.userId][item.wordId] = {
+        box: item.box ?? 1,
+        isStarred: item.isStarred ?? false,
+        reviewCount: item.reviewCount ?? 0,
+        correctCount: item.correctCount ?? 0,
+        wrongCount: item.wrongCount ?? 0,
+        lastReviewed: item.lastReviewed ?? null
+      };
+    }
+
+    res.json({
+      words,
+      users,
+      userProgress,
+      settings: settingsDoc?.settings || null
+    });
+  } catch (err) {
+    console.error('[API /data] Error:', err);
+    res.status(500).json({ error: 'Failed to fetch database data', details: err.message });
+  }
 });
 
 // 3. Get shared words
-router.get('/words', (req, res) => {
-  const db = readDatabase();
-  res.json(db.words || []);
+router.get('/words', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const words = await db.collection('words').find({}, { projection: { _id: 0 } }).toArray();
+    res.json(words);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch words', details: err.message });
+  }
 });
 
 // 4. Add a single shared word
-router.post('/words', (req, res) => {
-  const db = readDatabase();
-  const wordData = req.body;
-  const newWord = {
-    id: wordData.id || `w-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-    hanzi: wordData.hanzi?.trim() || '',
-    pinyin: wordData.pinyin?.trim() || '',
-    vietnamese: wordData.vietnamese?.trim() || '',
-    hanViet: wordData.hanViet?.trim() || '',
-    hskLevel: wordData.hskLevel || 1,
-    lesson: wordData.lesson || 'Từ tự thêm',
-    source: wordData.source || 'custom',
-    exampleSentence: wordData.exampleSentence || '',
-    examplePinyin: wordData.examplePinyin || '',
-    exampleVietnamese: wordData.exampleVietnamese || '',
-    radicals: wordData.radicals || '',
-    mnemonic: wordData.mnemonic || '',
-    createdAt: Date.now()
-  };
+router.post('/words', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const wordData = req.body;
+    const newWord = {
+      id: wordData.id || `w-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      hanzi: wordData.hanzi?.trim() || '',
+      pinyin: wordData.pinyin?.trim() || '',
+      vietnamese: wordData.vietnamese?.trim() || '',
+      hanViet: wordData.hanViet?.trim() || '',
+      exampleSentence: wordData.exampleSentence?.trim() || '',
+      examplePinyin: wordData.examplePinyin?.trim() || '',
+      exampleVietnamese: wordData.exampleVietnamese?.trim() || '',
+      radicals: wordData.radicals?.trim() || '',
+      mnemonic: wordData.mnemonic?.trim() || '',
+      hskLevel: wordData.hskLevel || 1,
+      lesson: wordData.lesson || 'Từ tự thêm',
+      source: wordData.source || 'custom',
+      box: wordData.box || 1,
+      isStarred: Boolean(wordData.isStarred),
+      reviewCount: wordData.reviewCount || 0,
+      correctCount: wordData.correctCount || 0,
+      wrongCount: wordData.wrongCount || 0,
+      createdAt: wordData.createdAt || Date.now()
+    };
 
-  db.words = [newWord, ...(db.words || [])];
-  writeDatabase(db);
-  res.json({ success: true, word: newWord });
+    await db.collection('words').insertOne(newWord);
+    const { _id, ...cleanWord } = newWord;
+    res.status(201).json({ success: true, word: cleanWord });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add word', details: err.message });
+  }
 });
 
-// 5. Add batch shared words
-router.post('/words/batch', (req, res) => {
-  const db = readDatabase();
-  const { newWords } = req.body;
-  if (!Array.isArray(newWords) || newWords.length === 0) {
-    return res.status(400).json({ error: 'newWords must be a non-empty array' });
+// 5. Add batch words
+router.post('/words/batch', async (req, res) => {
+  try {
+    const { words: newWords } = req.body;
+    if (!Array.isArray(newWords) || newWords.length === 0) {
+      return res.status(400).json({ error: 'Invalid words array' });
+    }
+
+    const { db } = await connectToDatabase();
+    const formattedWords = newWords.map((w, index) => ({
+      id: w.id || `w-batch-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 5)}`,
+      hanzi: w.hanzi?.trim() || '',
+      pinyin: w.pinyin?.trim() || '',
+      vietnamese: w.vietnamese?.trim() || '',
+      hanViet: w.hanViet?.trim() || '',
+      exampleSentence: w.exampleSentence?.trim() || '',
+      examplePinyin: w.examplePinyin?.trim() || '',
+      exampleVietnamese: w.exampleVietnamese?.trim() || '',
+      radicals: w.radicals?.trim() || '',
+      mnemonic: w.mnemonic?.trim() || '',
+      hskLevel: w.hskLevel || 1,
+      lesson: w.lesson || 'Từ tự thêm (Bulk)',
+      source: w.source || 'ai',
+      box: 1,
+      isStarred: false,
+      reviewCount: 0,
+      correctCount: 0,
+      wrongCount: 0,
+      createdAt: Date.now()
+    }));
+
+    await db.collection('words').insertMany(formattedWords);
+    res.status(201).json({ success: true, count: formattedWords.length, words: formattedWords });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add batch words', details: err.message });
   }
-
-  const prepared = newWords.map((item, idx) => ({
-    id: item.id || `batch-${Date.now()}-${idx}`,
-    hanzi: item.hanzi?.trim() || '',
-    pinyin: item.pinyin?.trim() || '',
-    vietnamese: item.vietnamese?.trim() || '',
-    hanViet: item.hanViet?.trim() || '',
-    hskLevel: item.hskLevel || 1,
-    lesson: item.lesson || 'Thêm hàng loạt AI',
-    source: item.source || 'ai',
-    exampleSentence: item.exampleSentence || '',
-    examplePinyin: item.examplePinyin || '',
-    exampleVietnamese: item.exampleVietnamese || '',
-    radicals: item.radicals || '',
-    mnemonic: item.mnemonic || '',
-    createdAt: Date.now()
-  }));
-
-  db.words = [...prepared, ...(db.words || [])];
-  writeDatabase(db);
-  res.json({ success: true, count: prepared.length, words: prepared });
 });
 
-// 6. Update shared word
-router.put('/words/:id', (req, res) => {
-  const { id } = req.params;
-  const updates = req.body;
-  const db = readDatabase();
-  const idx = db.words.findIndex(w => w.id === id);
-  if (idx === -1) {
-    return res.status(404).json({ error: 'Word not found' });
-  }
+// 6. Update a word
+router.put('/words/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    delete updates._id;
+    delete updates.id;
 
-  db.words[idx] = { ...db.words[idx], ...updates };
-  writeDatabase(db);
-  res.json({ success: true, word: db.words[idx] });
+    const { db } = await connectToDatabase();
+    const result = await db.collection('words').findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { returnDocument: 'after', projection: { _id: 0 } }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'Word not found' });
+    }
+
+    res.json({ success: true, word: result });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update word', details: err.message });
+  }
 });
 
 // 7. Delete shared word
-router.delete('/words/:id', (req, res) => {
-  const { id } = req.params;
-  const db = readDatabase();
-  db.words = db.words.filter(w => w.id !== id);
+router.delete('/words/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { db } = await connectToDatabase();
 
-  if (db.userProgress) {
-    Object.keys(db.userProgress).forEach(uid => {
-      if (db.userProgress[uid] && db.userProgress[uid][id]) {
-        delete db.userProgress[uid][id];
-      }
-    });
+    await db.collection('words').deleteOne({ id });
+    await db.collection('user_progress').deleteMany({ wordId: id });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete word', details: err.message });
   }
-
-  writeDatabase(db);
-  res.json({ success: true });
 });
 
 // 8. Get users
-router.get('/users', (req, res) => {
-  const db = readDatabase();
-  res.json(db.users || []);
+router.get('/users', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const users = await db.collection('users').find({}, { projection: { _id: 0 } }).toArray();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch users', details: err.message });
+  }
 });
 
 // 9. Create or login User
-router.post('/users', (req, res) => {
-  const { name, avatar } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Name is required' });
-  }
-
-  const db = readDatabase();
-  const trimmedName = name.trim();
-
-  let user = (db.users || []).find(u => u.name.toLowerCase() === trimmedName.toLowerCase());
-  if (!user) {
-    user = {
-      id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      name: trimmedName,
-      avatar: avatar || '🐼',
-      streakDays: 1,
-      lastActiveDate: new Date().toISOString().split('T')[0],
-      createdAt: Date.now()
-    };
-    db.users = [...(db.users || []), user];
-    if (!db.userProgress[user.id]) {
-      db.userProgress[user.id] = {};
+router.post('/users', async (req, res) => {
+  try {
+    const { name, avatar } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
     }
-    writeDatabase(db);
-  }
 
-  res.json({ success: true, user });
-});
+    const { db } = await connectToDatabase();
+    const trimmedName = name.trim();
 
-// 10. Rename / Update User profile
-router.put('/users/:id', (req, res) => {
-  const { id } = req.params;
-  const { name, avatar } = req.body;
-  const db = readDatabase();
-
-  const idx = (db.users || []).findIndex(u => u.id === id);
-  if (idx === -1) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-
-  if (name && name.trim()) {
-    db.users[idx].name = name.trim();
-  }
-  if (avatar) {
-    db.users[idx].avatar = avatar;
-  }
-
-  writeDatabase(db);
-  res.json({ success: true, user: db.users[idx] });
-});
-
-// 11. Delete User profile
-router.delete('/users/:id', (req, res) => {
-  const { id } = req.params;
-  const db = readDatabase();
-  db.users = (db.users || []).filter(u => u.id !== id);
-  if (db.userProgress && db.userProgress[id]) {
-    delete db.userProgress[id];
-  }
-  writeDatabase(db);
-  res.json({ success: true });
-});
-
-// 12. Update User's Word Progress
-router.post('/users/:userId/progress', (req, res) => {
-  const { userId } = req.params;
-  const { wordId, box, isStarred, remembered, lastReviewed } = req.body;
-
-  if (!wordId) {
-    return res.status(400).json({ error: 'wordId is required' });
-  }
-
-  const db = readDatabase();
-  if (!db.userProgress) db.userProgress = {};
-  if (!db.userProgress[userId]) db.userProgress[userId] = {};
-
-  const current = db.userProgress[userId][wordId] || {
-    box: 1,
-    isStarred: false,
-    reviewCount: 0,
-    correctCount: 0,
-    wrongCount: 0,
-    lastReviewed: null
-  };
-
-  if (box !== undefined) current.box = box;
-  if (isStarred !== undefined) current.isStarred = isStarred;
-  if (lastReviewed !== undefined) current.lastReviewed = lastReviewed;
-
-  if (remembered !== undefined) {
-    current.reviewCount = (current.reviewCount || 0) + 1;
-    if (remembered) {
-      current.correctCount = (current.correctCount || 0) + 1;
-      current.box = Math.min(5, (current.box || 1) + 1);
-    } else {
-      current.wrongCount = (current.wrongCount || 0) + 1;
-      current.box = 1;
+    let user = await db.collection('users').findOne({ name: trimmedName }, { projection: { _id: 0 } });
+    if (!user) {
+      const newUser = {
+        id: `u-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        name: trimmedName,
+        avatar: avatar || '🐉',
+        streakDays: 1,
+        lastActiveDate: new Date().toISOString()
+      };
+      await db.collection('users').insertOne(newUser);
+      const { _id, ...cleanUser } = newUser;
+      user = cleanUser;
     }
-    current.lastReviewed = Date.now();
-  }
 
-  db.userProgress[userId][wordId] = current;
-  writeDatabase(db);
-  res.json({ success: true, progress: current });
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create user', details: err.message });
+  }
 });
 
-// 13. Update User's Streak & Stats
-router.put('/users/:userId/stats', (req, res) => {
-  const { userId } = req.params;
-  const { streakDays, lastActiveDate } = req.body;
-  const db = readDatabase();
+// 10. Update user profile
+router.put('/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, avatar } = req.body;
 
-  const user = (db.users || []).find(u => u.id === userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
+    const updates = {};
+    if (name) updates.name = name.trim();
+    if (avatar) updates.avatar = avatar;
+
+    const { db } = await connectToDatabase();
+    const result = await db.collection('users').findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { returnDocument: 'after', projection: { _id: 0 } }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ success: true, user: result });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update user', details: err.message });
   }
-
-  if (streakDays !== undefined) user.streakDays = streakDays;
-  if (lastActiveDate !== undefined) user.lastActiveDate = lastActiveDate;
-
-  writeDatabase(db);
-  res.json({ success: true, user });
 });
 
-// 14. Reset to Default HSK 1 Words
-router.post('/reset-hsk1', (req, res) => {
-  const db = readDatabase();
-  db.words = HSK1_LESSON_WORDS.map(w => ({ ...w, source: 'hsk1' }));
-  writeDatabase(db);
-  res.json({ success: true, count: db.words.length });
+// 11. Delete user
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { db } = await connectToDatabase();
+
+    await db.collection('users').deleteOne({ id });
+    await db.collection('user_progress').deleteMany({ userId: id });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete user', details: err.message });
+  }
+});
+
+// 12. Save User Word Progress (SRS Flashcard Learning State)
+router.post('/progress', async (req, res) => {
+  try {
+    const { userId, wordId, progress } = req.body;
+    if (!userId || !wordId || !progress) {
+      return res.status(400).json({ error: 'userId, wordId, and progress are required' });
+    }
+
+    const { db } = await connectToDatabase();
+    await db.collection('user_progress').updateOne(
+      { userId, wordId },
+      {
+        $set: {
+          userId,
+          wordId,
+          box: progress.box ?? 1,
+          isStarred: progress.isStarred ?? false,
+          reviewCount: progress.reviewCount ?? 0,
+          correctCount: progress.correctCount ?? 0,
+          wrongCount: progress.wrongCount ?? 0,
+          lastReviewed: progress.lastReviewed ?? Date.now(),
+          updatedAt: Date.now()
+        }
+      },
+      { upsert: true }
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save progress', details: err.message });
+  }
+});
+
+// 13. Update User Streak
+router.put('/users/:id/streak', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { streakDays, lastActiveDate } = req.body;
+
+    const updates = {};
+    if (streakDays !== undefined) updates.streakDays = streakDays;
+    if (lastActiveDate !== undefined) updates.lastActiveDate = lastActiveDate;
+
+    const { db } = await connectToDatabase();
+    const result = await db.collection('users').findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { returnDocument: 'after', projection: { _id: 0 } }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ success: true, user: result });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update streak', details: err.message });
+  }
+});
+
+// 14. Reset to Starter HSK 1 Words (Bài 1, 2, 3)
+router.post('/reset-hsk1', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const wordsCol = db.collection('words');
+
+    await wordsCol.deleteMany({});
+    const starterLessons = HSK1_ALL_LESSONS.filter(l => l.lessonNumber <= 3);
+    const starterWords = starterLessons.flatMap(lesson =>
+      lesson.words.map(w => ({
+        id: w.id,
+        hanzi: w.hanzi,
+        pinyin: w.pinyin,
+        vietnamese: w.vietnamese,
+        hanViet: w.hanViet || '',
+        exampleSentence: w.exampleSentence || '',
+        examplePinyin: w.examplePinyin || '',
+        exampleVietnamese: w.exampleVietnamese || '',
+        radicals: w.radicals || '',
+        mnemonic: w.mnemonic || '',
+        hskLevel: w.hskLevel || 1,
+        lesson: w.lesson || `HSK 1 - Bài ${lesson.lessonNumber}`,
+        source: 'hsk1',
+        box: 1,
+        isStarred: false,
+        reviewCount: 0,
+        correctCount: 0,
+        wrongCount: 0,
+        createdAt: Date.now()
+      }))
+    );
+
+    await wordsCol.insertMany(starterWords);
+    res.json({ success: true, count: starterWords.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to reset HSK1 words', details: err.message });
+  }
 });
 
 // Mount router on both '/' and '/api'

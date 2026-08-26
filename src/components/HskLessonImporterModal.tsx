@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { HSK1_ALL_LESSONS, HskLessonPackage } from '../data/hsk1LessonsData';
+import { HSK1_ALL_LESSONS } from '../../server/hsk1StarterData.js';
+import type { HskLessonPackage } from '../types/index';
 import { soundEffects } from '../services/soundEffects';
 import confetti from 'canvas-confetti';
 import {

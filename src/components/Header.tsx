@@ -58,10 +58,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
 
         {/* User Profile Badge & Quick Settings & AI Status */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Always-On AI Status Indicator (Clickable to open Settings) */}
-          <button
-            onClick={onOpenSettingsModal}
-            className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#1f1a17] hover:bg-[#28221e] border border-[#2e2621] text-[11px] font-medium transition-all cursor-pointer"
+          {/* Always-On AI Status Indicator (Display Only) */}
+          <div
+            className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#1f1a17] border border-[#2e2621] text-[11px] font-medium select-none cursor-default"
             title={
               aiState === 'connected'
                 ? '🟢 Cổng kết nối AI đã sẵn sàng (Always-On)'
@@ -86,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
             <span className="text-[10px] font-bold text-[#d8cebe] hidden md:inline">
               {aiState === 'connected' ? 'AI Sẵn Sàng' : aiState === 'connecting' ? 'Đang nối...' : 'AI'}
             </span>
-          </button>
+          </div>
 
           {/* Active User Button */}
           {onOpenUserModal && (

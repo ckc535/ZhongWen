@@ -58,6 +58,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
   const [inputExampleVietnamese, setInputExampleVietnamese] = useState<string>('');
 
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+  const [isAiEditLoading, setIsAiEditLoading] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
   // Category Tab Filter (Tất cả / Từ gốc HSK 1 / Từ tự thêm)
@@ -112,14 +113,14 @@ export const WordManagement: React.FC<WordManagementProps> = ({
         vietnamese: inputVietnamese.trim() || inputHanViet.trim()
       });
 
-      if (result.hanzi && !hasHanzi) setInputHanzi(result.hanzi);
-      if (result.pinyin && !hasPinyin) setInputPinyin(result.pinyin);
-      if (result.hanViet && !hasHanViet) setInputHanViet(result.hanViet);
-      if (result.vietnamese && !hasVietnamese) setInputVietnamese(result.vietnamese);
-      if (result.radicals && !inputRadicals.trim()) setInputRadicals(result.radicals);
-      if (result.mnemonic && !inputMnemonic.trim()) setInputMnemonic(result.mnemonic);
-      if (result.exampleSentence && !inputExampleSentence.trim()) setInputExampleSentence(result.exampleSentence);
-      if (result.exampleVietnamese && !inputExampleVietnamese.trim()) setInputExampleVietnamese(result.exampleVietnamese);
+      if (result.hanzi) setInputHanzi(result.hanzi);
+      if (result.pinyin) setInputPinyin(result.pinyin);
+      if (result.hanViet) setInputHanViet(result.hanViet);
+      if (result.vietnamese) setInputVietnamese(result.vietnamese);
+      if (result.radicals) setInputRadicals(result.radicals);
+      if (result.mnemonic) setInputMnemonic(result.mnemonic);
+      if (result.exampleSentence) setInputExampleSentence(result.exampleSentence);
+      if (result.exampleVietnamese) setInputExampleVietnamese(result.exampleVietnamese);
 
       soundEffects.playSuccess();
     } catch (err: unknown) {
@@ -128,6 +129,41 @@ export const WordManagement: React.FC<WordManagementProps> = ({
       soundEffects.playWrong();
     } finally {
       setIsAiLoading(false);
+    }
+  };
+
+  // Trigger Gemini AI Auto-Fill for Editing Word Modal
+  const handleAutoFillEditingWord = async () => {
+    if (!editingWord) return;
+    setIsAiEditLoading(true);
+
+    try {
+      const result = await GeminiService.autoFillWord({
+        hanzi: editingWord.hanzi?.trim(),
+        pinyin: editingWord.pinyin?.trim(),
+        vietnamese: editingWord.vietnamese?.trim() || editingWord.hanViet?.trim()
+      });
+
+      setEditingWord(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          hanzi: result.hanzi || prev.hanzi,
+          pinyin: result.pinyin || prev.pinyin,
+          hanViet: result.hanViet || prev.hanViet,
+          vietnamese: result.vietnamese || prev.vietnamese,
+          radicals: result.radicals || prev.radicals,
+          mnemonic: result.mnemonic || prev.mnemonic,
+          exampleSentence: result.exampleSentence || prev.exampleSentence,
+          exampleVietnamese: result.exampleVietnamese || prev.exampleVietnamese
+        };
+      });
+
+      soundEffects.playSuccess();
+    } catch (err: unknown) {
+      soundEffects.playWrong();
+    } finally {
+      setIsAiEditLoading(false);
     }
   };
 
@@ -844,9 +880,26 @@ export const WordManagement: React.FC<WordManagementProps> = ({
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md p-6 rounded-3xl bg-[#1f1a17] border border-[#2e2621] shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-[#d8cebe] uppercase tracking-wider">
-                Chỉnh sửa chữ Hán
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold text-[#d8cebe] uppercase tracking-wider">
+                  Chỉnh sửa chữ Hán
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleAutoFillEditingWord}
+                  disabled={isAiEditLoading}
+                  className="px-2.5 py-1 rounded-lg bg-[#27211d] hover:bg-[#332815] border border-[#3e3226] text-[#e5a044] text-[11px] font-bold flex items-center gap-1 transition-all disabled:opacity-50"
+                  title="Nhờ AI tự động điền lại toàn bộ thông tin cho chữ này"
+                >
+                  {isAiEditLoading ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-[#e5a044]" />
+                  ) : (
+                    <Sparkles className="w-3 h-3 text-[#e5a044]" />
+                  )}
+                  <span>AI Điền lại</span>
+                </button>
+              </div>
+
               <button
                 onClick={() => setEditingWord(null)}
                 className="text-[#8e837a] hover:text-white"

@@ -1,7 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { Word, UserProfile, UserWordProgress, AppSettings, StudyStats } from '../types';
-import { HSK1_LESSON_WORDS } from '../data/hsk1StarterWords';
-import { DEFAULT_DATABASE_WORDS, DEFAULT_DATABASE_USERS, DEFAULT_DATABASE_PROGRESS } from '../data/defaultDatabaseData';
 import { soundEffects } from '../services/soundEffects';
 import { ApiService } from '../services/apiService';
 import { GeminiService } from '../services/geminiService';
@@ -19,7 +17,7 @@ interface AppContextType {
   // User management
   currentUser: UserProfile | null;
   users: UserProfile[];
-  setCurrentUser: (user: UserProfile) => void;
+  setCurrentUser: (user: UserProfile | null) => void;
   createNewUser: (name: string, avatar?: string) => Promise<UserProfile | null>;
   renameCurrentUser: (newName: string, avatar?: string) => Promise<UserProfile | null>;
   deleteUserProfile: (id: string) => Promise<boolean>;
@@ -46,36 +44,28 @@ interface AppContextType {
 }
 
 const ENV_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
-const ENV_MODEL = import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash';
+const ENV_MODEL = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
 
 const DEFAULT_SETTINGS: AppSettings = {
+  voiceRate: 0.85,
+  voicePitch: 1.0,
   geminiApiKey: ENV_API_KEY,
   geminiModel: ENV_MODEL,
-  voicePitch: 1.0,
-  voiceRate: 0.85,
   soundEffects: true,
   dailyTarget: 20
 };
 
-const DEFAULT_STATS: StudyStats = {
-  streakDays: 1,
-  lastActiveDate: new Date().toISOString().split('T')[0],
-  totalReviewsToday: 0,
-  masteredCount: 0
-};
-
 const STORAGE_KEYS = {
-  CURRENT_USER_ID: 'zhongwen_active_user_id',
-  SETTINGS: 'zhongwen_settings_v3',
+  CURRENT_USER_ID: 'zhongwen_current_user_id',
   FALLBACK_WORDS: 'zhongwen_fallback_words',
   FALLBACK_USERS: 'zhongwen_fallback_users',
-  FALLBACK_PROGRESS: 'zhongwen_fallback_progress'
+  FALLBACK_PROGRESS: 'zhongwen_fallback_progress',
+  SETTINGS: 'zhongwen_settings'
 };
 
 const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Tab synced with URL Hash (e.g. #/study, #/words, #/stories, #/quiz, #/writer)
   const getTabFromHash = (): 'study' | 'words' | 'stories' | 'quiz' | 'writer' => {
     const raw = window.location.hash.replace(/^#\/?/, '').toLowerCase();
     const validTabs: Array<'study' | 'words' | 'stories' | 'quiz' | 'writer'> = ['study', 'words', 'stories', 'quiz', 'writer'];
@@ -85,13 +75,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return 'study';
   };
 
-  const [activeTab, setActiveTabState] = useState<'study' | 'words' | 'stories' | 'quiz' | 'writer'>(getTabFromHash);
+  // Navigation Hash State
+  const [activeTab, setActiveTabState] = useState<'study' | 'words' | 'stories' | 'quiz' | 'writer'>(() => {
+    return getTabFromHash();
+  });
 
   const setActiveTab = useCallback((tab: 'study' | 'words' | 'stories' | 'quiz' | 'writer') => {
     setActiveTabState(tab);
-    if (window.location.hash !== `#/${tab}`) {
-      window.location.hash = `#/${tab}`;
-    }
+    window.location.hash = tab;
   }, []);
 
   // Listen for browser Back/Forward hash navigation
@@ -104,7 +95,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Shared words pool (raw definitions from server/database)
+  // Shared words pool (raw definitions from MongoDB Atlas)
   const [sharedWords, setSharedWords] = useState<Word[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.FALLBACK_WORDS);
@@ -112,10 +103,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // ignore
     }
-    return DEFAULT_DATABASE_WORDS;
+    return [];
   });
 
-  // Users list
+  // Users list (purely from MongoDB)
   const [users, setUsers] = useState<UserProfile[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.FALLBACK_USERS);
@@ -123,7 +114,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // ignore
     }
-    return DEFAULT_DATABASE_USERS;
+    return [];
   });
 
   // Active current user (Starts as null if user has not selected yet)
@@ -152,7 +143,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // ignore
     }
-    return DEFAULT_DATABASE_PROGRESS;
+    return {};
   });
 
   // Settings
@@ -335,15 +326,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const savedWord = await ApiService.addWord(wordData);
-    const resultWord: Word = savedWord || {
-      id: `w-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      hanzi: wordData.hanzi || '',
-      pinyin: wordData.pinyin || '',
-      vietnamese: wordData.vietnamese || '',
-      hanViet: wordData.hanViet || '',
+    const resultWord: Word = {
+      id: savedWord?.id || `w-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      hanzi: savedWord?.hanzi || wordData.hanzi || '',
+      pinyin: savedWord?.pinyin || wordData.pinyin || '',
+      vietnamese: savedWord?.vietnamese || wordData.vietnamese || '',
+      hanViet: savedWord?.hanViet || wordData.hanViet || '',
+      radicals: savedWord?.radicals || wordData.radicals || '',
+      mnemonic: savedWord?.mnemonic || wordData.mnemonic || '',
+      exampleSentence: savedWord?.exampleSentence || wordData.exampleSentence || '',
+      examplePinyin: savedWord?.examplePinyin || wordData.examplePinyin || '',
+      exampleVietnamese: savedWord?.exampleVietnamese || wordData.exampleVietnamese || '',
       box: 1,
       isStarred: false,
-      hskLevel: 1,
+      hskLevel: wordData.hskLevel || 1,
       lesson: wordData.lesson,
       source: 'custom',
       reviewCount: 0,
@@ -491,10 +487,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ApiService.updateUserProgress(activeUserId, { wordId, remembered });
   }, [activeUserId, currentUserProgressMap]);
 
-  // Reset to Default HSK 1
+  // Reset to Starter HSK 1 (Lessons 1-3)
   const resetToHsk1Starter = useCallback(async () => {
     await ApiService.resetHsk1();
-    setSharedWords(HSK1_LESSON_WORDS.map(w => ({ ...w, source: 'hsk1' as const })));
+    const data = await ApiService.getFullData();
+    if (data && data.words) {
+      setSharedWords(data.words);
+    }
   }, []);
 
   // Update Settings

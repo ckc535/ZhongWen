@@ -706,31 +706,40 @@ ${formatInstruction}
 ${priorityWords ? `- Ưu tiên lồng ghép các từ học viên đang cần ôn: [${priorityWords}].` : ''}
 - Kèm thêm 2-4 TỪ MỚI tự nhiên mở rộng vốn từ.
 
+⚠️ NGUYÊN TẮC CỐT LÕI (BẮT BUỘC TUÂN THỦ TUYỆT ĐỐI):
+1. Trường "chineseText", "sentences[].chinese", và "tokens[].hanzi" BẮT BUỘC 100% PHẢI LÀ CHỮ HÁN GIẢN THỂ (ví dụ: 再见, 谢谢, 你好, 老师, 不客气).
+   👉 TUYỆT ĐỐI KHÔNG ĐƯỢC ĐẶT PINYIN (như zàijiàn, nǐhǎo...) HAY CHỮ LA-TINH VÀO TRƯỜNG "chinese" HOẶC "hanzi"!
+2. Pinyin CÓ DẤU THANH ĐIỆU chỉ được xuất hiện DUY NHẤT trong các trường: "titlePinyin", "pinyinText", "sentences[].pinyin", và "tokens[].pinyin".
+3. Mỗi token trong "tokens":
+   - "hanzi": BẮT BUỘC LÀ CHỮ HÁN (ví dụ "再见")
+   - "pinyin": Pinyin tương ứng (ví dụ "zàijiàn")
+   - "vietnamese": Dịch nghĩa từ đó (ví dụ "tạm biệt")
+
 Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sau (không thêm bất kỳ văn bản nào ngoài JSON):
 {
-  "title": "Tiêu đề tiếng Trung",
+  "title": "Tiêu đề tiếng Trung (Chữ Hán)",
   "titlePinyin": "Pinyin tiêu đề",
   "titleVietnamese": "Dịch tiêu đề",
-  "chineseText": "Toàn bộ bài tiếng Trung",
+  "chineseText": "Toàn bộ bài viết bằng 100% Chữ Hán",
   "pinyinText": "Pinyin toàn bài",
-  "vietnameseTranslation": "Dịch toàn bài",
+  "vietnameseTranslation": "Dịch toàn bài sang tiếng Việt",
   "format": "${format}",
   "sentences": [
     {
-      "chinese": "Câu tiếng Trung ${isDialogue ? '(có tên người nói ở đầu)' : ''}",
+      "chinese": "Câu 100% Chữ Hán ${isDialogue ? '(có tên người nói bằng Chữ Hán ở đầu, ví dụ 李月：再见！)' : ''}",
       "pinyin": "Pinyin câu",
       "vietnamese": "Dịch câu tiếng Việt",
-      "speaker": "${isDialogue ? 'Tên nhân vật nói (ví dụ 大卫 hoặc 李月)' : ''}",
+      "speaker": "${isDialogue ? 'Tên nhân vật bằng Chữ Hán (ví dụ 大卫 hoặc 李月)' : ''}",
       "tokens": [
-        { "hanzi": "chữ/từ", "pinyin": "pinyin", "vietnamese": "nghĩa ngắn" }
+        { "hanzi": "chữ Hán", "pinyin": "pinyin", "vietnamese": "nghĩa ngắn" }
       ]
     }
   ],
   "newWordsDetected": [
     {
-      "hanzi": "từ mới",
-      "pinyin": "pinyin có dấu",
-      "vietnamese": "nghĩa tiếng Việt ngắn",
+      "hanzi": "Chữ Hán từ mới",
+      "pinyin": "Pinyin có dấu",
+      "vietnamese": "Nghĩa tiếng Việt ngắn",
       "hanViet": "Âm Hán Việt",
       "radicals": "Bộ thủ cấu thành",
       "mnemonic": "Mẹo nhớ mặt chữ ngắn gọn sinh động",

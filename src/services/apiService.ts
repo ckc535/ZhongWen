@@ -9,7 +9,7 @@ export class ApiService {
       if (!res.ok) throw new Error('API request failed');
       return await res.json();
     } catch (err) {
-      console.warn('Backend API not available, will use local fallback:', err);
+      console.warn('Backend MongoDB API error:', err);
       return null;
     }
   }
@@ -45,7 +45,7 @@ export class ApiService {
       const res = await fetch(`${API_BASE}/words/batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newWords })
+        body: JSON.stringify({ words: newWords })
       });
       const data = await res.json();
       return data.words || [];
@@ -92,7 +92,7 @@ export class ApiService {
     }
   }
 
-  public static async createOrLoginUser(name: string, avatar: string = '🐼'): Promise<UserProfile | null> {
+  public static async createOrLoginUser(name: string, avatar: string = '🐉'): Promise<UserProfile | null> {
     try {
       const res = await fetch(`${API_BASE}/users`, {
         method: 'POST',
@@ -136,19 +136,22 @@ export class ApiService {
 
   public static async updateUserProgress(
     userId: string,
-    payload: { wordId: string; box?: number; isStarred?: boolean; remembered?: boolean; lastReviewed?: number }
-  ): Promise<UserWordProgress | null> {
+    payload: { wordId: string; box?: number; isStarred?: boolean; remembered?: boolean; lastReviewed?: number; progress?: any }
+  ): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/users/${userId}/progress`, {
+      const res = await fetch(`${API_BASE}/progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          userId,
+          wordId: payload.wordId,
+          progress: payload.progress || payload
+        })
       });
-      const data = await res.json();
-      return data.progress || null;
+      return res.ok;
     } catch (err) {
       console.error('updateUserProgress error:', err);
-      return null;
+      return false;
     }
   }
 
@@ -157,7 +160,7 @@ export class ApiService {
     stats: { streakDays?: number; lastActiveDate?: string }
   ): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/users/${userId}/stats`, {
+      const res = await fetch(`${API_BASE}/users/${userId}/streak`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(stats)

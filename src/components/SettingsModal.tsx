@@ -12,12 +12,7 @@ import {
   AlertCircle,
   Users,
   Edit3,
-  Flame,
-  Sparkles,
-  Key,
-  Eye,
-  EyeOff,
-  ExternalLink
+  Flame
 } from 'lucide-react';
 
 const AVATARS = ['🐼', '🐉', '🐯', '🦊', '🐰', '🎋', '🏮', '🌸', '🍵', '🏯'];
@@ -47,9 +42,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [voiceRate, setVoiceRate] = useState<number>(settings.voiceRate);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(settings.soundEffects);
-  const [apiKey, setApiKey] = useState<string>(settings.geminiApiKey || '');
-  const [model, setModel] = useState<string>(settings.geminiModel || 'gemini-2.5-flash');
-  const [showApiKey, setShowApiKey] = useState<boolean>(false);
 
   // Rename current user state
   const [isRenaming, setIsRenaming] = useState<boolean>(false);
@@ -62,8 +54,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSave = () => {
     updateSettings({
-      geminiApiKey: apiKey.trim(),
-      geminiModel: model.trim(),
       voiceRate,
       soundEffects: soundEnabled
     });
@@ -255,88 +245,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
           )}
-        </div>
-
-        {/* SECTION 1: GOOGLE GEMINI AI CONFIGURATION */}
-        <div className="p-4 rounded-2xl bg-[#161311] border border-[#2e2621] space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-[#e5a044]" />
-              <h3 className="text-xs font-bold text-[#f5ede4] uppercase tracking-wider">
-                Cấu Hình Google Gemini AI
-              </h3>
-            </div>
-            <a
-              href="https://aistudio.google.com/app/apikey"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[11px] text-[#e5a044] hover:underline flex items-center gap-1 font-semibold"
-            >
-              <span>Lấy API Key miễn phí</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-
-          <p className="text-[11px] text-[#8e837a]">
-            Dùng để tạo bài đọc AI thông minh, tự động giải nghĩa, chiết tự, tạo câu ví dụ và âm Hán Việt.
-          </p>
-
-          <div className="space-y-2.5">
-            <div>
-              <label className="block text-[11px] text-[#8e837a] mb-1">
-                Gemini API Key (Hỗ trợ nhập 1 hoặc nhiều key cách nhau bằng dấu phẩy):
-              </label>
-              <div className="relative">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Dán mã API Key (AIzaSy... hoặc AQ.Ab...)"
-                  className="w-full h-9 bg-[#1f1a17] border border-[#2e2621] focus:border-[#df5343] rounded-xl px-3 pr-10 text-xs text-[#f5ede4] font-mono focus:outline-none placeholder:text-[#5a4e44]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8e837a] hover:text-[#f5ede4] p-1"
-                >
-                  {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[11px] text-[#8e837a] mb-1">AI Model:</label>
-                <select
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  className="w-full h-9 bg-[#1f1a17] border border-[#2e2621] focus:border-[#df5343] rounded-xl px-2.5 text-xs text-[#f5ede4] focus:outline-none cursor-pointer font-mono"
-                >
-                  <option value="gemini-2.5-flash">⚡ gemini-2.5-flash (Nhanh & Ổn định nhất)</option>
-                  <option value="gemini-2.5-pro">🧠 gemini-2.5-pro (Tư duy sâu & Viết hay)</option>
-                  <option value="gemini-1.5-flash">🚀 gemini-1.5-flash</option>
-                  <option value="gemini-3.5-flash-lite">🔥 gemini-3.5-flash-lite</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col justify-end">
-                <div className="p-2 rounded-xl bg-[#1f1a17] border border-[#2e2621] flex items-center justify-between">
-                  <span className="text-[11px] text-[#8e837a]">Trạng thái:</span>
-                  {apiKey.trim() ? (
-                    <span className="text-[11px] font-bold text-[#5eb786] flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-[#5eb786] animate-pulse" />
-                      Đã thiết lập Key
-                    </span>
-                  ) : (
-                    <span className="text-[11px] font-bold text-[#e5a044] flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-[#e5a044]" />
-                      Chưa có Key (Dùng từ điển Offline)
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* SECTION 2: AUDIO & SPEECH SETTINGS */}
