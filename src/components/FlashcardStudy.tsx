@@ -117,16 +117,11 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
   const [slideDirection, setSlideDirection] = useState<'next' | 'prev' | 'none'>('none');
   const [isTransitioningCard, setIsTransitioningCard] = useState<boolean>(false);
 
-  // Swipe / Drag Gesture State
+  // Swipe / Drag Gesture State using Unified Pointer Events
   const [dragOffset, setDragOffset] = useState<number>(0);
   const [isDragging, setIsDragging] = useState<boolean>(false);
-  const touchStartRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
+  const pointerStartRef = useRef<{ id: number; x: number; y: number; time: number } | null>(null);
   const hasMovedRef = useRef<boolean>(false);
-  const isMouseDownRef = useRef<boolean>(false);
-  const lastTouchEndTimeRef = useRef<number>(0);
-  const isInteractiveTouchRef = useRef<boolean>(false);
-  const isInteractiveMouseRef = useRef<boolean>(false);
-  const cardContainerRef = useRef<HTMLDivElement>(null);
 
   // Lock body scrolling when in study mode
   useEffect(() => {
@@ -144,23 +139,6 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
       };
     }
   }, [isStudying, sessionCompleted]);
-
-  // Attach native non-passive touchmove listener to completely prevent vertical scrolling
-  useEffect(() => {
-    const el = cardContainerRef.current;
-    if (!el) return;
-
-    const onNativeTouchMove = (e: TouchEvent) => {
-      if (e.cancelable) {
-        e.preventDefault();
-      }
-    };
-
-    el.addEventListener('touchmove', onNativeTouchMove, { passive: false });
-    return () => {
-      el.removeEventListener('touchmove', onNativeTouchMove);
-    };
-  }, [isStudying, currentIndex]);
 
   // Navigate to another card instantly with slide transition animation
   const goToCard = useCallback((newIndex: number, dir?: 'next' | 'prev') => {
@@ -206,36 +184,60 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
     }
   };
 
-  // Touch Handlers for Mobile Swiping (No vertical scroll bounce, no double flip)
-  const handleTouchStart = (e: React.TouchEvent) => {
+  // Unified Pointer Down Handler (Supports Mobile Touch + Desktop Mouse flawlessly)
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement | null;
-    const isInteractive = Boolean(target?.closest('button, a, input, select, textarea, [data-interactive="true"]'));
-    isInteractiveTouchRef.current = isInteractive;
+    if (target?.closest('button, a, input, select, textarea, [data-interactive="true"]')) {
+      return;
+    }
 
-    const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) {
+      return;
+    }
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+
+    pointerStartRef.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      time: Date.now()
+    };
     hasMovedRef.current = false;
     setIsDragging(true);
     setDragOffset(0);
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    const touch = e.touches[0];
-    const diffX = touch.clientX - touchStartRef.current.x;
+  // Unified Pointer Move Handler
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointerStartRef.current || pointerStartRef.current.id !== e.pointerId) return;
 
-    if (Math.abs(diffX) > 8) {
+    const diffX = e.clientX - pointerStartRef.current.x;
+    if (Math.abs(diffX) > 6) {
       hasMovedRef.current = true;
       setDragOffset(diffX);
     }
   };
 
-  const handleTouchEnd = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    lastTouchEndTimeRef.current = Date.now();
+  // Unified Pointer Up / Cancel Handler
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointerStartRef.current || pointerStartRef.current.id !== e.pointerId) return;
 
-    const SWIPE_THRESHOLD = 40; // 40px drag threshold to switch card
+    const startInfo = pointerStartRef.current;
+    pointerStartRef.current = null;
+    setIsDragging(false);
+
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+
+    const SWIPE_THRESHOLD = 45; // 45px swipe distance to switch card
     if (dragOffset < -SWIPE_THRESHOLD) {
       if (currentIndex + 1 < sessionQueue.length) {
         handleNextCard();
@@ -248,58 +250,8 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
       } else {
         soundEffects.playClick();
       }
-    } else if (!hasMovedRef.current && !isInteractiveTouchRef.current) {
-      // Clean tap on card (NOT tapping on buttons like Phát âm / Gợi ý)
-      handleToggleFlip();
-    }
-
-    setDragOffset(0);
-  };
-
-  // Mouse Handlers for Desktop Dragging
-  const handleMouseDown = (e: React.MouseEvent) => {
-    // Ignore synthetic mouse events right after touch
-    if (Date.now() - lastTouchEndTimeRef.current < 600) return;
-    const target = e.target as HTMLElement | null;
-    isInteractiveMouseRef.current = Boolean(target?.closest('button, a, input, select, textarea, [data-interactive="true"]'));
-
-    touchStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
-    isMouseDownRef.current = true;
-    hasMovedRef.current = false;
-    setIsDragging(true);
-    setDragOffset(0);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isMouseDownRef.current) return;
-    const diffX = e.clientX - touchStartRef.current.x;
-    if (Math.abs(diffX) > 8) {
-      hasMovedRef.current = true;
-    }
-    setDragOffset(diffX);
-  };
-
-  const handleMouseUp = () => {
-    if (Date.now() - lastTouchEndTimeRef.current < 600) return;
-    if (!isMouseDownRef.current) return;
-    isMouseDownRef.current = false;
-    setIsDragging(false);
-
-    const SWIPE_THRESHOLD = 40;
-    if (dragOffset < -SWIPE_THRESHOLD) {
-      if (currentIndex + 1 < sessionQueue.length) {
-        handleNextCard();
-      } else {
-        soundEffects.playClick();
-      }
-    } else if (dragOffset > SWIPE_THRESHOLD) {
-      if (currentIndex > 0) {
-        handlePrevCard();
-      } else {
-        soundEffects.playClick();
-      }
-    } else if (!hasMovedRef.current && !isInteractiveMouseRef.current) {
-      // Clean click on desktop (NOT clicking on buttons)
+    } else if (!hasMovedRef.current && Date.now() - startInfo.time < 400) {
+      // Clean tap on the card without dragging -> flip card
       handleToggleFlip();
     }
 
@@ -470,35 +422,18 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
         {/* ================= REAL 3D FLIP FLASHCARD CONTAINER (WITH SWIPE GESTURES & SLIDE ANIMATION) ================= */}
         <div
-          ref={cardContainerRef}
-          key={currentIndex}
-          className={`w-full select-none relative touch-none overscroll-none ${
-            slideDirection === 'next'
-              ? 'animate-slide-next'
-              : slideDirection === 'prev'
-              ? 'animate-slide-prev'
-              : ''
-          }`}
-          style={{
-            transform: isDragging ? `translate3d(${dragOffset}px, 0, 0)` : undefined,
-            transition: isDragging ? 'none' : undefined,
-            touchAction: 'none',
-            userSelect: 'none',
-            WebkitUserSelect: 'none'
-          }}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          className="w-full select-none relative touch-none overscroll-none"
+          style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerEnd}
+          onPointerCancel={handlePointerEnd}
         >
           {/* Real-time Swipe Feedback Badge Indicator */}
           {dragOffset < -25 && (
             <div
-              className="absolute top-1/2 -translate-y-1/2 right-3 sm:right-6 px-3 py-1.5 rounded-xl bg-[#df5343] text-white font-bold text-xs shadow-2xl z-30 flex items-center gap-1 pointer-events-none transition-opacity duration-150 animate-in fade-in"
-              style={{ opacity: Math.min(1, Math.abs(dragOffset) / 60) }}
+              className="absolute top-1/2 -translate-y-1/2 right-3 sm:right-6 px-3.5 py-2 rounded-xl bg-[#df5343] text-white font-bold text-xs shadow-2xl z-30 flex items-center gap-1.5 pointer-events-none animate-in fade-in"
+              style={{ opacity: Math.min(1, Math.abs(dragOffset) / 50) }}
             >
               <span>Đi tiếp</span>
               <ChevronRight className="w-4 h-4" />
@@ -507,23 +442,34 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
           {dragOffset > 25 && (
             <div
-              className="absolute top-1/2 -translate-y-1/2 left-3 sm:left-6 px-3 py-1.5 rounded-xl bg-[#27211d] border border-[#3d332c] text-[#e5a044] font-bold text-xs shadow-2xl z-30 flex items-center gap-1 pointer-events-none transition-opacity duration-150 animate-in fade-in"
-              style={{ opacity: Math.min(1, Math.abs(dragOffset) / 60) }}
+              className="absolute top-1/2 -translate-y-1/2 left-3 sm:left-6 px-3 py-1.5 rounded-xl bg-[#27211d] border border-[#3d332c] text-[#e5a044] font-bold text-xs shadow-2xl z-30 flex items-center gap-1.5 pointer-events-none animate-in fade-in"
+              style={{ opacity: Math.min(1, Math.abs(dragOffset) / 50) }}
             >
               <ChevronLeft className="w-4 h-4" />
               <span>Lùi lại</span>
             </div>
           )}
 
+          {/* Stationary Card Container (No dragging movement, pure instant stability) */}
           <div
-            className={`w-full min-h-[360px] sm:min-h-[420px] relative flip-card-inner perspective-1000 cursor-grab active:cursor-grabbing rounded-2xl sm:rounded-3xl touch-none select-none ${
-              isFlipped ? 'is-flipped' : ''
-            } ${isTransitioningCard ? 'no-anim' : ''}`}
-            style={{
-              touchAction: 'none',
-              userSelect: 'none'
-            }}
+            key={currentIndex}
+            className={`w-full ${
+              slideDirection === 'next'
+                ? 'animate-slide-next'
+                : slideDirection === 'prev'
+                ? 'animate-slide-prev'
+                : ''
+            }`}
           >
+            <div
+              className={`w-full min-h-[360px] sm:min-h-[420px] relative flip-card-inner perspective-1000 cursor-pointer rounded-2xl sm:rounded-3xl touch-none select-none ${
+                isFlipped ? 'is-flipped' : ''
+              } ${isTransitioningCard ? 'no-anim' : ''}`}
+              style={{
+                touchAction: 'none',
+                userSelect: 'none'
+              }}
+            >
             {/* ================= CARD FRONT (rotateY: 0deg) ================= */}
             <div
               className="absolute inset-0 w-full h-full backface-hidden p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-[#1f1a17] hover:border-[#3d332c] border border-[#2e2621] shadow-2xl flex flex-col items-center justify-between text-center transition-colors touch-none select-none"
@@ -830,6 +776,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
             </div>
           </div>
         </div>
+      </div>
 
         {/* ================= CONTROLS: FREE NAVIGATION (← / →) & SRS RATINGS (1 / 2) ================= */}
         <div className="space-y-2 pt-0.5">

@@ -73,8 +73,8 @@ body {
 
 /* 3D Flip Card Styles */
 .perspective-1000 {
-  perspective: 1200px;
-  -webkit-perspective: 1200px;
+  perspective: 1000px;
+  -webkit-perspective: 1000px;
 }
 
 .transform-style-3d {
@@ -85,19 +85,17 @@ body {
 .backface-hidden {
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
   -webkit-font-smoothing: subpixel-antialiased;
 }
 
 .rotate-y-180 {
-  transform: rotateY(180deg) translate3d(0, 0, 0);
-  -webkit-transform: rotateY(180deg) translate3d(0, 0, 0);
+  transform: rotateY(180deg);
+  -webkit-transform: rotateY(180deg);
 }
 
 .flip-card-inner {
-  transition: transform 0.5s cubic-bezier(0.2, 0.85, 0.4, 1.1);
-  -webkit-transition: -webkit-transform 0.5s cubic-bezier(0.2, 0.85, 0.4, 1.1);
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-transition: -webkit-transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   transform-style: preserve-3d;
   -webkit-transform-style: preserve-3d;
   will-change: transform;
@@ -116,8 +114,8 @@ body {
 /* Card Slide Transition Utilities */
 @keyframes slideInFromRight {
   0% {
-    opacity: 0.15;
-    transform: translate3d(50px, 0, 0);
+    opacity: 0.2;
+    transform: translate3d(60px, 0, 0);
   }
   100% {
     opacity: 1;
@@ -127,8 +125,8 @@ body {
 
 @keyframes slideInFromLeft {
   0% {
-    opacity: 0.15;
-    transform: translate3d(-50px, 0, 0);
+    opacity: 0.2;
+    transform: translate3d(-60px, 0, 0);
   }
   100% {
     opacity: 1;
@@ -137,11 +135,11 @@ body {
 }
 
 .animate-slide-next {
-  animation: slideInFromRight 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideInFromRight 0.22s ease-out forwards;
 }
 
 .animate-slide-prev {
-  animation: slideInFromLeft 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideInFromLeft 0.22s ease-out forwards;
 }
 
 
