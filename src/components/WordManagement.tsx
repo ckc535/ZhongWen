@@ -217,6 +217,32 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     }
   };
 
+  // Check if any new word input is non-empty
+  const hasAnyInput = Boolean(
+    inputHanzi ||
+    inputPinyin ||
+    inputHanViet ||
+    inputVietnamese ||
+    inputRadicals ||
+    inputMnemonic ||
+    inputExampleSentence ||
+    inputExampleVietnamese
+  );
+
+  // Clear all input fields for adding new word
+  const handleClearAllInputs = () => {
+    soundEffects.playClick();
+    setInputHanzi('');
+    setInputPinyin('');
+    setInputHanViet('');
+    setInputVietnamese('');
+    setInputRadicals('');
+    setInputMnemonic('');
+    setInputExampleSentence('');
+    setInputExampleVietnamese('');
+    setAiError(null);
+  };
+
   // Handle Status Option Select (Chưa thuộc / Đã thuộc / Từ khó)
   const handleSetStatus = (e: React.MouseEvent, word: Word, status: 'unmastered' | 'mastered' | 'starred') => {
     e.stopPropagation();
@@ -304,6 +330,18 @@ export const WordManagement: React.FC<WordManagementProps> = ({
             </h2>
           </div>
           <div className="flex items-center gap-3">
+            {hasAnyInput && (
+              <button
+                type="button"
+                onClick={handleClearAllInputs}
+                className="text-xs text-[#8e837a] hover:text-[#e05344] flex items-center gap-1 font-semibold transition-all cursor-pointer"
+                title="Xóa trắng toàn bộ form"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Xóa form</span>
+              </button>
+            )}
+
             {onOpenLessonImporter && (
               <button
                 onClick={onOpenLessonImporter}
@@ -489,9 +527,20 @@ export const WordManagement: React.FC<WordManagementProps> = ({
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <button
                 type="button"
+                onClick={handleClearAllInputs}
+                disabled={!hasAnyInput}
+                className="h-10 px-3.5 rounded-xl bg-[#221c19] hover:bg-[#2c231f] border border-[#382f29] hover:border-[#4d3f35] text-xs font-semibold text-[#8e837a] hover:text-[#e05344] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                title="Xóa trắng tất cả các ô vừa nhập"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Xóa hết</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handleAutoFill}
                 disabled={isAiLoading}
-                className="h-10 px-4 rounded-xl bg-[#27211d] hover:bg-[#322a25] border border-[#382f29] hover:border-[#4d3f35] text-xs font-bold text-[#e5a044] flex items-center gap-1.5 transition-all disabled:opacity-50"
+                className="h-10 px-4 rounded-xl bg-[#27211d] hover:bg-[#322a25] border border-[#382f29] hover:border-[#4d3f35] text-xs font-bold text-[#e5a044] flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
                 title="Tự động điền tất cả các ô còn lại bằng AI"
               >
                 {isAiLoading ? (
@@ -504,7 +553,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
 
               <button
                 type="submit"
-                className="h-10 px-6 rounded-xl bg-[#df5343] hover:bg-[#eb5f50] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all active:scale-95"
+                className="h-10 px-6 rounded-xl bg-[#df5343] hover:bg-[#eb5f50] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
               >
                 + Thêm Chữ Mới
               </button>
