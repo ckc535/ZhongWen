@@ -124,6 +124,43 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
   const hasMovedRef = useRef<boolean>(false);
   const isMouseDownRef = useRef<boolean>(false);
   const lastTouchEndTimeRef = useRef<number>(0);
+  const isInteractiveTouchRef = useRef<boolean>(false);
+  const isInteractiveMouseRef = useRef<boolean>(false);
+  const cardContainerRef = useRef<HTMLDivElement>(null);
+
+  // Lock body scrolling when in study mode
+  useEffect(() => {
+    if (isStudying && !sessionCompleted) {
+      const prevOverflow = document.body.style.overflow;
+      const prevTouchAction = document.body.style.touchAction;
+      const prevOverscroll = document.body.style.overscrollBehavior;
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      document.body.style.overscrollBehavior = 'none';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        document.body.style.touchAction = prevTouchAction;
+        document.body.style.overscrollBehavior = prevOverscroll;
+      };
+    }
+  }, [isStudying, sessionCompleted]);
+
+  // Attach native non-passive touchmove listener to completely prevent vertical scrolling
+  useEffect(() => {
+    const el = cardContainerRef.current;
+    if (!el) return;
+
+    const onNativeTouchMove = (e: TouchEvent) => {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    };
+
+    el.addEventListener('touchmove', onNativeTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener('touchmove', onNativeTouchMove);
+    };
+  }, [isStudying, currentIndex]);
 
   // Navigate to another card instantly with slide transition animation
   const goToCard = useCallback((newIndex: number, dir?: 'next' | 'prev') => {
@@ -147,7 +184,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
   };
 
   // Toggle Hint
-  const handleToggleHint = (e: React.MouseEvent) => {
+  const handleToggleHint = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
     soundEffects.playClick();
     setShowHint(prev => !prev);
@@ -171,6 +208,10 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
   // Touch Handlers for Mobile Swiping (No vertical scroll bounce, no double flip)
   const handleTouchStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement | null;
+    const isInteractive = Boolean(target?.closest('button, a, input, select, textarea, [data-interactive="true"]'));
+    isInteractiveTouchRef.current = isInteractive;
+
     const touch = e.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
     hasMovedRef.current = false;
@@ -207,8 +248,8 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
       } else {
         soundEffects.playClick();
       }
-    } else if (!hasMovedRef.current) {
-      // Clean tap without drag on mobile
+    } else if (!hasMovedRef.current && !isInteractiveTouchRef.current) {
+      // Clean tap on card (NOT tapping on buttons like Phát âm / Gợi ý)
       handleToggleFlip();
     }
 
@@ -219,6 +260,9 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
   const handleMouseDown = (e: React.MouseEvent) => {
     // Ignore synthetic mouse events right after touch
     if (Date.now() - lastTouchEndTimeRef.current < 600) return;
+    const target = e.target as HTMLElement | null;
+    isInteractiveMouseRef.current = Boolean(target?.closest('button, a, input, select, textarea, [data-interactive="true"]'));
+
     touchStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     isMouseDownRef.current = true;
     hasMovedRef.current = false;
@@ -254,8 +298,8 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
       } else {
         soundEffects.playClick();
       }
-    } else if (!hasMovedRef.current) {
-      // Clean click on desktop
+    } else if (!hasMovedRef.current && !isInteractiveMouseRef.current) {
+      // Clean click on desktop (NOT clicking on buttons)
       handleToggleFlip();
     }
 
@@ -426,6 +470,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
         {/* ================= REAL 3D FLIP FLASHCARD CONTAINER (WITH SWIPE GESTURES & SLIDE ANIMATION) ================= */}
         <div
+          ref={cardContainerRef}
           key={currentIndex}
           className={`w-full perspective-1000 select-none relative touch-none overscroll-none ${
             slideDirection === 'next'
@@ -465,22 +510,25 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
           )}
 
           <div
-            className={`w-full min-h-[360px] sm:min-h-[420px] relative flip-card-inner cursor-grab active:cursor-grabbing rounded-2xl sm:rounded-3xl ${
+            className={`w-full min-h-[360px] sm:min-h-[420px] relative flip-card-inner cursor-grab active:cursor-grabbing rounded-2xl sm:rounded-3xl touch-none select-none ${
               isFlipped ? 'is-flipped' : ''
             } ${isTransitioningCard ? 'no-anim' : ''}`}
             style={{
               transform: isDragging
                 ? `translateX(${dragOffset}px) rotate(${dragOffset * 0.04}deg)`
                 : undefined,
-              transition: isDragging ? 'none' : undefined
+              transition: isDragging ? 'none' : undefined,
+              touchAction: 'none',
+              userSelect: 'none'
             }}
           >
             {/* ================= CARD FRONT (rotateY: 0deg) ================= */}
             <div
-              className="absolute inset-0 w-full h-full backface-hidden p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-[#1f1a17] hover:border-[#3d332c] border border-[#2e2621] shadow-2xl flex flex-col items-center justify-between text-center transition-colors group"
+              className="absolute inset-0 w-full h-full backface-hidden p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-[#1f1a17] hover:border-[#3d332c] border border-[#2e2621] shadow-2xl flex flex-col items-center justify-between text-center transition-colors group touch-none select-none"
               style={{
                 backfaceVisibility: 'hidden',
-                WebkitBackfaceVisibility: 'hidden'
+                WebkitBackfaceVisibility: 'hidden',
+                touchAction: 'none'
               }}
             >
               {/* Top Meta: Box & Lesson & Star & Pen */}
@@ -499,6 +547,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
+                    data-interactive="true"
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleStar(currentWord.id);
@@ -516,6 +565,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                   {onOpenStrokeWriter && (
                     <button
                       type="button"
+                      data-interactive="true"
                       onClick={(e) => {
                         e.stopPropagation();
                         onOpenStrokeWriter(currentWord.hanzi);
@@ -540,6 +590,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
                     <button
                       type="button"
+                      data-interactive="true"
                       onClick={(e) => {
                         e.stopPropagation();
                         playAudio();
@@ -572,6 +623,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                   <div className="flex flex-col items-center space-y-2 sm:space-y-3">
                     <button
                       type="button"
+                      data-interactive="true"
                       onClick={(e) => {
                         e.stopPropagation();
                         playAudio();
@@ -595,6 +647,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                 <div className="w-full max-w-sm pt-1" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
+                    data-interactive="true"
                     onClick={handleToggleHint}
                     className={`px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold border flex items-center gap-1.5 mx-auto transition-all cursor-pointer ${
                       showHint
@@ -662,6 +715,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
+                    data-interactive="true"
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleStar(currentWord.id);
@@ -679,6 +733,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                   {onOpenStrokeWriter && (
                     <button
                       type="button"
+                      data-interactive="true"
                       onClick={(e) => {
                         e.stopPropagation();
                         onOpenStrokeWriter(currentWord.hanzi);
@@ -715,6 +770,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
                 <button
                   type="button"
+                  data-interactive="true"
                   onClick={(e) => {
                     e.stopPropagation();
                     playAudio();
