@@ -22,8 +22,7 @@ const MainLayout: React.FC = () => {
   const isUserModalOpen = !currentUser || isExplicitUserModalOpen;
 
   const handleOpenStrokeWriter = (hanzi: string) => {
-    const firstChar = hanzi.trim().charAt(0) || '你';
-    setActiveStrokeChar(firstChar);
+    setActiveStrokeChar(hanzi.trim());
   };
 
   return (
@@ -58,7 +57,7 @@ const MainLayout: React.FC = () => {
           )}
 
           {activeTab === 'writer' && (
-            <StrokeOrderCanvas initialChar="你" />
+            <StrokeOrderCanvas initialChar={activeStrokeChar || undefined} />
           )}
         </main>
       </div>
