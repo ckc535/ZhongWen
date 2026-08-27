@@ -472,14 +472,20 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
         <div
           ref={cardContainerRef}
           key={currentIndex}
-          className={`w-full perspective-1000 select-none relative touch-none overscroll-none ${
+          className={`w-full select-none relative touch-none overscroll-none ${
             slideDirection === 'next'
               ? 'animate-slide-next'
               : slideDirection === 'prev'
               ? 'animate-slide-prev'
               : ''
           }`}
-          style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+          style={{
+            transform: isDragging ? `translate3d(${dragOffset}px, 0, 0)` : undefined,
+            transition: isDragging ? 'none' : undefined,
+            touchAction: 'none',
+            userSelect: 'none',
+            WebkitUserSelect: 'none'
+          }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -510,21 +516,17 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
           )}
 
           <div
-            className={`w-full min-h-[360px] sm:min-h-[420px] relative flip-card-inner cursor-grab active:cursor-grabbing rounded-2xl sm:rounded-3xl touch-none select-none ${
+            className={`w-full min-h-[360px] sm:min-h-[420px] relative flip-card-inner perspective-1000 cursor-grab active:cursor-grabbing rounded-2xl sm:rounded-3xl touch-none select-none ${
               isFlipped ? 'is-flipped' : ''
             } ${isTransitioningCard ? 'no-anim' : ''}`}
             style={{
-              transform: isDragging
-                ? `translateX(${dragOffset}px) rotate(${dragOffset * 0.04}deg)`
-                : undefined,
-              transition: isDragging ? 'none' : undefined,
               touchAction: 'none',
               userSelect: 'none'
             }}
           >
             {/* ================= CARD FRONT (rotateY: 0deg) ================= */}
             <div
-              className="absolute inset-0 w-full h-full backface-hidden p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-[#1f1a17] hover:border-[#3d332c] border border-[#2e2621] shadow-2xl flex flex-col items-center justify-between text-center transition-colors group touch-none select-none"
+              className="absolute inset-0 w-full h-full backface-hidden p-4 sm:p-8 rounded-2xl sm:rounded-3xl bg-[#1f1a17] hover:border-[#3d332c] border border-[#2e2621] shadow-2xl flex flex-col items-center justify-between text-center transition-colors touch-none select-none"
               style={{
                 backfaceVisibility: 'hidden',
                 WebkitBackfaceVisibility: 'hidden',
@@ -584,7 +586,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                 {/* 1. DIRECTION: CHỮ ➔ NGHĨA */}
                 {direction === 'hanzi-to-meaning' && (
                   <>
-                    <h1 className="font-chinese text-6xl sm:text-8xl font-normal text-[#f5ede4] tracking-wider select-none group-hover:scale-105 transition-transform leading-none">
+                    <h1 className="font-chinese text-6xl sm:text-8xl font-normal text-[#f5ede4] tracking-wider select-none leading-none">
                       {currentWord.hanzi}
                     </h1>
 
@@ -628,7 +630,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                         e.stopPropagation();
                         playAudio();
                       }}
-                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl bg-[#27211d] hover:bg-[#322a25] border-2 border-[#df5343] flex items-center justify-center text-[#df5343] shadow-xl hover:scale-105 active:scale-95 transition-all group-hover:border-[#eb5f50] cursor-pointer"
+                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl bg-[#27211d] hover:bg-[#322a25] border-2 border-[#df5343] flex items-center justify-center text-[#df5343] shadow-xl active:scale-95 transition-all group-hover:border-[#eb5f50] cursor-pointer"
                       title="Bấm để nghe lại phát âm"
                     >
                       <Volume2 className="w-10 h-10 sm:w-12 sm:h-12 animate-pulse" />
