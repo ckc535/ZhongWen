@@ -302,8 +302,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const totalWordsCount = words.length;
   const masteredWordsCount = words.filter(w => w.box >= 5).length;
   const starredWordsCount = words.filter(w => w.isStarred).length;
-  const hsk1WordsCount = words.filter(w => w.source === 'hsk1' || w.lesson?.includes('HSK 1')).length;
-  const customWordsCount = words.filter(w => w.source === 'custom' || w.source === 'ai' || (!w.lesson?.includes('HSK 1') && w.source !== 'hsk1')).length;
+  const hsk1WordsCount = words.filter(w => w.source === 'hsk1' || (w.lesson && w.lesson.toLowerCase().includes('hsk'))).length;
+  const customWordsCount = words.filter(w => !(w.source === 'hsk1' || (w.lesson && w.lesson.toLowerCase().includes('hsk')))).length;
 
   const now = Date.now();
   const dueWordsCount = words.filter(w => {

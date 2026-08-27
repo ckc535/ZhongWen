@@ -56,6 +56,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
   const [inputMnemonic, setInputMnemonic] = useState<string>('');
   const [inputExampleSentence, setInputExampleSentence] = useState<string>('');
   const [inputExampleVietnamese, setInputExampleVietnamese] = useState<string>('');
+  const [inputSource, setInputSource] = useState<'hsk1' | 'custom'>('custom');
 
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [isAiEditLoading, setIsAiEditLoading] = useState<boolean>(false);
@@ -167,7 +168,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     }
   };
 
-  // Handle Add Single Word with all 8 rich fields
+  // Handle Add Single Word with all 8 rich fields + Source selector
   const handleAddWordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const hanziTrimmed = inputHanzi.trim();
@@ -195,8 +196,9 @@ export const WordManagement: React.FC<WordManagementProps> = ({
         exampleVietnamese: inputExampleVietnamese.trim() || '',
         box: 1,
         isStarred: false,
-        source: 'custom',
-        lesson: 'Từ tự thêm'
+        source: inputSource,
+        lesson: inputSource === 'hsk1' ? 'New HSK 1' : 'Từ tự thêm',
+        hskLevel: inputSource === 'hsk1' ? 1 : undefined
       });
 
       soundEffects.playSuccess();
@@ -233,10 +235,11 @@ export const WordManagement: React.FC<WordManagementProps> = ({
 
   // 1. Words filtered by Category Tab (used for consistent count badges)
   const categoryWords = words.filter(word => {
+    const isHsk = word.source === 'hsk1' || (word.lesson && word.lesson.toLowerCase().includes('hsk'));
     if (categoryTab === 'hsk1') {
-      return word.source === 'hsk1' || word.lesson?.includes('HSK 1');
+      return isHsk;
     } else if (categoryTab === 'custom') {
-      return word.source === 'custom' || word.source === 'ai' || (!word.lesson?.includes('HSK 1') && word.source !== 'hsk1');
+      return !isHsk;
     }
     return true;
   });
@@ -440,6 +443,40 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                 placeholder="Ví dụ: Cô ấy tên là Lý Nguyệt."
                 className="w-full h-10 bg-[#161311] border border-[#2e2621] focus:border-[#df5343] rounded-xl px-3 text-xs text-[#d8cebe] placeholder-[#4e453e] focus:outline-none"
               />
+            </div>
+          </div>
+
+          {/* Row 5: Nguồn từ vựng (Gốc New HSK vs Tự thêm / AI) */}
+          <div>
+            <label className="block text-[11px] text-[#8e837a] mb-1 font-medium flex items-center justify-between">
+              <span>Nguồn từ vựng</span>
+              <span className="text-[10px] text-[#6e635a]">Chọn phân loại khi học & tra cứu</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2 p-1 bg-[#161311] border border-[#2e2621] rounded-xl">
+              <button
+                type="button"
+                onClick={() => setInputSource('hsk1')}
+                className={`h-9 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  inputSource === 'hsk1'
+                    ? 'bg-[#1b2f23] text-[#5eb786] shadow-sm border border-[#315740]'
+                    : 'text-[#8e837a] hover:text-[#d8cebe] hover:bg-[#1f1a17]'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>Gốc New HSK 1</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputSource('custom')}
+                className={`h-9 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  inputSource === 'custom'
+                    ? 'bg-[#33261a] text-[#e5a044] shadow-sm border border-[#553c24]'
+                    : 'text-[#8e837a] hover:text-[#d8cebe] hover:bg-[#1f1a17]'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Tự thêm / AI</span>
+              </button>
             </div>
           </div>
 
@@ -662,9 +699,15 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                             ({word.hanViet})
                           </span>
                         )}
-                        {word.source === 'custom' && (
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#27211d] text-[#e5a044] border border-[#382f29]">
-                            Tự thêm
+                        {(word.source === 'hsk1' || (word.lesson && word.lesson.toLowerCase().includes('hsk'))) ? (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#182a20] text-[#5eb786] border border-[#2d4d38] font-semibold flex items-center gap-1" title={word.lesson || 'Gốc New HSK 1'}>
+                            <BookOpen className="w-2.5 h-2.5" />
+                            <span>{word.lesson || 'HSK 1'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#27211d] text-[#e5a044] border border-[#3d332c] font-semibold flex items-center gap-1" title={word.lesson || 'Từ tự thêm'}>
+                            <UserCheck className="w-2.5 h-2.5" />
+                            <span>{word.lesson || 'Tự thêm'}</span>
                           </span>
                         )}
                         {/* Audio speaker button directly next to pinyin */}
@@ -892,51 +935,65 @@ export const WordManagement: React.FC<WordManagementProps> = ({
 
       {/* Edit Word Modal */}
       {editingWord && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-[#1f1a17] border border-[#2e2621] shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="w-full max-w-lg p-5 sm:p-7 rounded-3xl bg-[#1f1a17] border border-[#382f29] shadow-2xl space-y-4 my-auto animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-[#2e2621] pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#28211c] border border-[#3e3229] flex items-center justify-center text-[#df5343]">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-[#f5ede4] uppercase tracking-wider">
+                    Chỉnh sửa chữ Hán
+                  </h3>
+                  <p className="text-[11px] text-[#8e837a]">
+                    Cập nhật thông tin chi tiết hoặc phân loại lại nguồn từ
+                  </p>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2">
-                <h3 className="text-xs font-bold text-[#d8cebe] uppercase tracking-wider">
-                  Chỉnh sửa chữ Hán
-                </h3>
                 <button
                   type="button"
                   onClick={handleAutoFillEditingWord}
                   disabled={isAiEditLoading}
-                  className="px-2.5 py-1 rounded-lg bg-[#27211d] hover:bg-[#332815] border border-[#3e3226] text-[#e5a044] text-[11px] font-bold flex items-center gap-1 transition-all disabled:opacity-50"
+                  className="px-2.5 py-1 rounded-xl bg-[#27211d] hover:bg-[#332815] border border-[#3e3226] text-[#e5a044] text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
                   title="Nhờ AI tự động điền lại toàn bộ thông tin cho chữ này"
                 >
                   {isAiEditLoading ? (
-                    <Loader2 className="w-3 h-3 animate-spin text-[#e5a044]" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#e5a044]" />
                   ) : (
-                    <Sparkles className="w-3 h-3 text-[#e5a044]" />
+                    <Sparkles className="w-3.5 h-3.5 text-[#e5a044]" />
                   )}
                   <span>AI Điền lại</span>
                 </button>
-              </div>
 
-              <button
-                onClick={() => setEditingWord(null)}
-                className="text-[#8e837a] hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingWord(null)}
+                  className="p-1 rounded-xl bg-[#161311] hover:bg-[#27211d] text-[#8e837a] hover:text-white border border-[#2e2621] transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
+            {/* Modal Form Fields */}
             <div className="space-y-3">
-              <div>
-                <label className="block text-[11px] text-[#8e837a] mb-1">Chữ Hán</label>
-                <input
-                  type="text"
-                  value={editingWord.hanzi}
-                  onChange={(e) => setEditingWord({ ...editingWord, hanzi: e.target.value })}
-                  className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 font-chinese text-xl text-white focus:outline-none focus:border-[#df5343]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              {/* Row 1: Chữ Hán, Pinyin, Âm Hán Việt */}
+              <div className="grid grid-cols-3 gap-2.5">
                 <div>
-                  <label className="block text-[11px] text-[#8e837a] mb-1">Pinyin</label>
+                  <label className="block text-[11px] text-[#8e837a] mb-1 font-medium">Chữ Hán *</label>
+                  <input
+                    type="text"
+                    value={editingWord.hanzi}
+                    onChange={(e) => setEditingWord({ ...editingWord, hanzi: e.target.value })}
+                    className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 font-chinese text-lg font-bold text-white focus:outline-none focus:border-[#df5343]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-[#8e837a] mb-1 font-medium">Pinyin</label>
                   <input
                     type="text"
                     value={editingWord.pinyin}
@@ -945,7 +1002,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-[#8e837a] mb-1">Âm Hán Việt</label>
+                  <label className="block text-[11px] text-[#8e837a] mb-1 font-medium">Âm Hán Việt</label>
                   <input
                     type="text"
                     value={editingWord.hanViet || ''}
@@ -955,8 +1012,9 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                 </div>
               </div>
 
+              {/* Row 2: Nghĩa tiếng Việt */}
               <div>
-                <label className="block text-[11px] text-[#8e837a] mb-1">Nghĩa tiếng Việt</label>
+                <label className="block text-[11px] text-[#8e837a] mb-1 font-medium">Nghĩa tiếng Việt *</label>
                 <input
                   type="text"
                   value={editingWord.vietnamese}
@@ -965,9 +1023,10 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Row 3: Bộ thủ & Chiết tự */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-[11px] text-[#8e837a] mb-1 flex items-center gap-1">
+                  <label className="block text-[11px] text-[#8e837a] mb-1 font-medium flex items-center gap-1">
                     <span className="text-[#e5a044]">🧩</span>
                     <span>Bộ thủ cấu thành</span>
                   </label>
@@ -981,7 +1040,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] text-[#8e837a] mb-1 flex items-center gap-1">
+                  <label className="block text-[11px] text-[#8e837a] mb-1 font-medium flex items-center gap-1">
                     <span className="text-[#5eb786]">💡</span>
                     <span>Mẹo nhớ / Chiết tự</span>
                   </label>
@@ -995,32 +1054,82 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] text-[#8e837a] mb-1">Câu ví dụ</label>
-                <input
-                  type="text"
-                  value={editingWord.exampleSentence || ''}
-                  onChange={(e) => setEditingWord({ ...editingWord, exampleSentence: e.target.value })}
-                  className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 text-xs text-[#d8cebe] focus:outline-none focus:border-[#df5343]"
-                />
+              {/* Row 4: Ví dụ & Dịch nghĩa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] text-[#8e837a] mb-1 font-medium">Câu ví dụ (tiếng Trung)</label>
+                  <input
+                    type="text"
+                    value={editingWord.exampleSentence || ''}
+                    onChange={(e) => setEditingWord({ ...editingWord, exampleSentence: e.target.value })}
+                    placeholder="Ví dụ: 她叫李月。"
+                    className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 text-xs text-[#d8cebe] focus:outline-none focus:border-[#df5343]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-[#8e837a] mb-1 font-medium">Dịch nghĩa câu ví dụ</label>
+                  <input
+                    type="text"
+                    value={editingWord.exampleVietnamese || ''}
+                    onChange={(e) => setEditingWord({ ...editingWord, exampleVietnamese: e.target.value })}
+                    placeholder="Ví dụ: Cô ấy tên là Lý Nguyệt."
+                    className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 text-xs text-[#d8cebe] focus:outline-none focus:border-[#df5343]"
+                  />
+                </div>
               </div>
 
+              {/* Row 5: Nguồn từ vựng (Moved to bottom) */}
               <div>
-                <label className="block text-[11px] text-[#8e837a] mb-1">Dịch nghĩa câu ví dụ</label>
-                <input
-                  type="text"
-                  value={editingWord.exampleVietnamese || ''}
-                  onChange={(e) => setEditingWord({ ...editingWord, exampleVietnamese: e.target.value })}
-                  className="w-full h-10 bg-[#161311] border border-[#2e2621] rounded-xl px-3 text-xs text-[#d8cebe] focus:outline-none focus:border-[#df5343]"
-                />
+                <label className="block text-[11px] text-[#8e837a] mb-1 font-medium flex items-center justify-between">
+                  <span>Phân loại nguồn từ</span>
+                  <span className="text-[10px] text-[#6e635a]">Đổi nhóm giáo trình New HSK hoặc Tự thêm</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-[#161311] border border-[#2e2621] rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setEditingWord({
+                      ...editingWord,
+                      source: 'hsk1',
+                      hskLevel: 1,
+                      lesson: 'New HSK 1'
+                    })}
+                    className={`h-9 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      (editingWord.source === 'hsk1' || editingWord.lesson?.includes('HSK'))
+                        ? 'bg-[#1b2f23] text-[#5eb786] shadow-sm border border-[#315740]'
+                        : 'text-[#8e837a] hover:text-[#d8cebe] hover:bg-[#1f1a17]'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Gốc New HSK 1</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingWord({
+                      ...editingWord,
+                      source: 'custom',
+                      hskLevel: undefined,
+                      lesson: 'Từ tự thêm'
+                    })}
+                    className={`h-9 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      (editingWord.source !== 'hsk1' && !editingWord.lesson?.includes('HSK'))
+                        ? 'bg-[#33261a] text-[#e5a044] shadow-sm border border-[#553c24]'
+                        : 'text-[#8e837a] hover:text-[#d8cebe] hover:bg-[#1f1a17]'
+                    }`}
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Tự thêm / AI</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-[#2e2621]">
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#2e2621]">
               <button
                 type="button"
                 onClick={() => setEditingWord(null)}
-                className="px-4 py-2 rounded-xl bg-[#27211d] text-xs font-semibold text-[#8e837a] hover:text-white"
+                className="px-4 py-2 rounded-xl bg-[#27211d] hover:bg-[#322a25] text-xs font-semibold text-[#8e837a] hover:text-white border border-[#382f29] transition-colors cursor-pointer"
               >
                 Hủy
               </button>
@@ -1031,7 +1140,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                   setEditingWord(null);
                   soundEffects.playSuccess();
                 }}
-                className="px-5 py-2 rounded-xl bg-[#df5343] hover:bg-[#eb5f50] text-xs font-bold text-white shadow-md"
+                className="px-6 py-2 rounded-xl bg-[#df5343] hover:bg-[#eb5f50] text-xs font-bold text-white shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
               >
                 Lưu thay đổi
               </button>
