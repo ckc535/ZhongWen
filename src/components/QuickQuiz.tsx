@@ -60,7 +60,12 @@ export const QuickQuiz: React.FC = () => {
       pool = [...words];
     }
 
-    const shuffledWords = [...pool].sort(() => Math.random() - 0.5).slice(0, questionCount);
+    const poolCopy = [...pool];
+    for (let i = poolCopy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [poolCopy[i], poolCopy[j]] = [poolCopy[j], poolCopy[i]];
+    }
+    const shuffledWords = poolCopy.slice(0, questionCount);
     const allWords = [...words];
 
     return shuffledWords.map((targetWord, idx) => {
@@ -101,7 +106,11 @@ export const QuickQuiz: React.FC = () => {
         return w.pinyin;
       });
 
-      const options = [correctAnswer, ...wrongOpts].sort(() => Math.random() - 0.5);
+      const options = [correctAnswer, ...wrongOpts];
+      for (let i = options.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [options[i], options[j]] = [options[j], options[i]];
+      }
 
       return {
         id: `q-${idx}-${Date.now()}`,

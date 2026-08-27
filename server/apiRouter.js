@@ -319,20 +319,30 @@ router.post('/progress', async (req, res) => {
       return res.status(400).json({ error: 'userId, wordId, and progress are required' });
     }
 
+    const updateFields = {
+      userId,
+      wordId,
+      updatedAt: Date.now()
+    };
+    if (progress.box !== undefined) updateFields.box = progress.box;
+    if (progress.isStarred !== undefined) updateFields.isStarred = progress.isStarred;
+    if (progress.reviewCount !== undefined) updateFields.reviewCount = progress.reviewCount;
+    if (progress.correctCount !== undefined) updateFields.correctCount = progress.correctCount;
+    if (progress.wrongCount !== undefined) updateFields.wrongCount = progress.wrongCount;
+    if (progress.lastReviewed !== undefined) updateFields.lastReviewed = progress.lastReviewed;
+
     const { db } = await connectToDatabase();
     await db.collection('user_progress').updateOne(
       { userId, wordId },
       {
-        $set: {
-          userId,
-          wordId,
-          box: progress.box ?? 1,
-          isStarred: progress.isStarred ?? false,
-          reviewCount: progress.reviewCount ?? 0,
-          correctCount: progress.correctCount ?? 0,
-          wrongCount: progress.wrongCount ?? 0,
-          lastReviewed: progress.lastReviewed ?? Date.now(),
-          updatedAt: Date.now()
+        $set: updateFields,
+        $setOnInsert: {
+          box: 1,
+          isStarred: false,
+          reviewCount: 0,
+          correctCount: 0,
+          wrongCount: 0,
+          lastReviewed: null
         }
       },
       { upsert: true }

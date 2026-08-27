@@ -20,7 +20,8 @@ import {
   Lightbulb,
   Headphones,
   FileText,
-  HelpCircle
+  HelpCircle,
+  Clock
 } from 'lucide-react';
 
 interface FlashcardStudyProps {
@@ -43,7 +44,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
   // Study Config State
   const [direction, setDirection] = useState<StudyDirection>('hanzi-to-meaning');
-  const [filterMode, setFilterMode] = useState<StudyFilter>('unmastered');
+  const [filterMode, setFilterMode] = useState<StudyFilter>('due');
   const [scopeFilter, setScopeFilter] = useState<'all' | 'hsk1' | 'custom'>('all');
   const [isStudying, setIsStudying] = useState<boolean>(false);
 
@@ -69,25 +70,38 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
       pool = pool.filter(w => w.source === 'custom' || w.source === 'ai' || (!w.lesson?.includes('HSK 1') && w.source !== 'hsk1'));
     }
 
+    if (filterMode === 'due') {
+      const now = Date.now();
+      return pool.filter(w => {
+        if (!w.lastReviewed) return true;
+        const boxDays = [0, 1, 2, 4, 7, 14][w.box] || 1;
+        return now - w.lastReviewed >= boxDays * 24 * 60 * 60 * 1000;
+      });
+    }
     if (filterMode === 'unmastered') {
-      return pool.filter(w => w.box < 5);
+      return pool.filter(w => (w.box || 1) < 5);
     }
     if (filterMode === 'starred') {
       return pool.filter(w => w.isStarred);
     }
     if (filterMode === 'mastered') {
-      return pool.filter(w => w.box >= 5);
+      return pool.filter(w => (w.box || 1) >= 5);
     }
     return pool;
   }, [words, filterMode, scopeFilter]);
 
-  // Start study session
+  // Start study session with 100% True Random Fisher-Yates Shuffle
   const startStudy = () => {
     let pool = getFilteredWords();
     if (pool.length === 0) {
       pool = [...words];
     }
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    // Fisher-Yates True Random Shuffle Algorithm
+    const shuffled = [...pool];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
     setSessionQueue(shuffled);
     setCurrentIndex(0);
     setIsFlipped(false);
@@ -966,63 +980,111 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <button
-            onClick={() => setFilterMode('unmastered')}
-            className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
-              filterMode === 'unmastered'
-                ? 'bg-[#2b1917] border-[#df5343] text-white'
-                : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
-            }`}
-          >
-            <span className="block text-base sm:text-lg font-bold text-[#df5343]">
-              {words.filter(w => w.box < 5).length}
-            </span>
-            <span className="text-[11px] sm:text-xs font-semibold">Chưa thuộc</span>
-          </button>
+        {/* Dynamic counts per scope */}
+        {(() => {
+          const now = Date.now();
+          const scopedWords = words.filter(w => {
+            if (scopeFilter === 'hsk1') return w.source === 'hsk1' || w.lesson?.includes('HSK 1');
+            if (scopeFilter === 'custom') return w.source === 'custom' || w.source === 'ai' || (!w.lesson?.includes('HSK 1') && w.source !== 'hsk1');
+            return true;
+          });
 
-          <button
-            onClick={() => setFilterMode('starred')}
-            className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
-              filterMode === 'starred'
-                ? 'bg-[#33261a] border-[#e5a044] text-white'
-                : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
-            }`}
-          >
-            <span className="block text-base sm:text-lg font-bold text-[#e5a044]">
-              {starredWordsCount}
-            </span>
-            <span className="text-[11px] sm:text-xs font-semibold">Từ khó ⭐</span>
-          </button>
+          const dueCount = scopedWords.filter(w => {
+            if (!w.lastReviewed) return true;
+            const boxDays = [0, 1, 2, 4, 7, 14][w.box] || 1;
+            return now - w.lastReviewed >= boxDays * 24 * 60 * 60 * 1000;
+          }).length;
+          const unmasteredCount = scopedWords.filter(w => (w.box || 1) < 5).length;
+          const starredCount = scopedWords.filter(w => w.isStarred).length;
+          const allCount = scopedWords.length;
+          const masteredCount = scopedWords.filter(w => (w.box || 1) >= 5).length;
 
-          <button
-            onClick={() => setFilterMode('all')}
-            className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
-              filterMode === 'all'
-                ? 'bg-[#27211d] border-[#8e837a] text-white'
-                : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
-            }`}
-          >
-            <span className="block text-base sm:text-lg font-bold text-[#f5ede4]">
-              {totalWordsCount}
-            </span>
-            <span className="text-[11px] sm:text-xs font-semibold">Tất cả từ</span>
-          </button>
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              {/* 1. Chưa ôn (Due) */}
+              <button
+                type="button"
+                onClick={() => setFilterMode('due')}
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
+                  filterMode === 'due'
+                    ? 'bg-[#2b1917] border-[#df5343] text-white shadow-md'
+                    : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
+                }`}
+              >
+                <span className="block text-base sm:text-lg font-bold text-[#df5343]">
+                  {dueCount}
+                </span>
+                <span className="text-[11px] sm:text-xs font-semibold flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-[#df5343]" /> Chưa ôn
+                </span>
+              </button>
 
-          <button
-            onClick={() => setFilterMode('mastered')}
-            className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
-              filterMode === 'mastered'
-                ? 'bg-[#1a261d] border-[#5eb786] text-white'
-                : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
-            }`}
-          >
-            <span className="block text-base sm:text-lg font-bold text-[#5eb786]">
-              {words.filter(w => w.box >= 5).length}
-            </span>
-            <span className="text-[11px] sm:text-xs font-semibold">Đã thuộc</span>
-          </button>
-        </div>
+              {/* 2. Chưa thuộc */}
+              <button
+                type="button"
+                onClick={() => setFilterMode('unmastered')}
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
+                  filterMode === 'unmastered'
+                    ? 'bg-[#2b1917] border-[#e06c5f] text-white shadow-md'
+                    : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
+                }`}
+              >
+                <span className="block text-base sm:text-lg font-bold text-[#e06c5f]">
+                  {unmasteredCount}
+                </span>
+                <span className="text-[11px] sm:text-xs font-semibold">Chưa thuộc</span>
+              </button>
+
+              {/* 3. Từ khó ⭐ */}
+              <button
+                type="button"
+                onClick={() => setFilterMode('starred')}
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
+                  filterMode === 'starred'
+                    ? 'bg-[#33261a] border-[#e5a044] text-white shadow-md'
+                    : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
+                }`}
+              >
+                <span className="block text-base sm:text-lg font-bold text-[#e5a044]">
+                  {starredCount}
+                </span>
+                <span className="text-[11px] sm:text-xs font-semibold">Từ khó ⭐</span>
+              </button>
+
+              {/* 4. Tất cả từ */}
+              <button
+                type="button"
+                onClick={() => setFilterMode('all')}
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
+                  filterMode === 'all'
+                    ? 'bg-[#27211d] border-[#8e837a] text-white shadow-md'
+                    : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
+                }`}
+              >
+                <span className="block text-base sm:text-lg font-bold text-[#f5ede4]">
+                  {allCount}
+                </span>
+                <span className="text-[11px] sm:text-xs font-semibold">Tất cả từ</span>
+              </button>
+
+              {/* 5. Đã thuộc */}
+              <button
+                type="button"
+                onClick={() => setFilterMode('mastered')}
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
+                  filterMode === 'mastered'
+                    ? 'bg-[#1a261d] border-[#5eb786] text-white shadow-md'
+                    : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
+                }`}
+              >
+                <span className="block text-base sm:text-lg font-bold text-[#5eb786]">
+                  {masteredCount}
+                </span>
+                <span className="text-[11px] sm:text-xs font-semibold">Đã thuộc</span>
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Start Button */}
         <div className="pt-1 sm:pt-2">

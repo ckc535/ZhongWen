@@ -120,19 +120,19 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
 
       {/* 4 Stats Compact Ribbon (Ultra-compact on Mobile, Rich on Desktop) */}
       <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5 mb-3 sm:mb-4">
-        {/* 1. Chưa thuộc / Cần ôn */}
+        {/* 1. Chưa ôn (Cần ôn trong ngày) */}
         <div
           onClick={() => setActiveTab('study')}
           className="p-2 sm:p-3.5 rounded-xl sm:rounded-2xl bg-[#1f1a17] hover:bg-[#27211d] border border-[#2e2621] hover:border-[#3d332c] transition-all cursor-pointer text-center sm:text-left group"
         >
           <div className="flex items-center justify-center sm:justify-between">
-            <span className="text-base sm:text-2xl md:text-3xl font-black text-[#f5ede4]">
+            <span className="text-base sm:text-2xl md:text-3xl font-black text-[#df5343]">
               {dueWordsCount}
             </span>
             <Clock className="w-3.5 h-3.5 text-[#8e837a] hidden sm:block" />
           </div>
           <p className="text-[10px] sm:text-xs text-[#8e837a] font-medium mt-0.5 truncate">
-            Chưa thuộc
+            Chưa ôn
           </p>
         </div>
 

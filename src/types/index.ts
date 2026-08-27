@@ -47,7 +47,7 @@ export interface DatabaseSchema {
 }
 
 export type StudyDirection = 'hanzi-to-meaning' | 'meaning-to-hanzi' | 'audio-to-hanzi';
-export type StudyFilter = 'unmastered' | 'all' | 'starred' | 'mastered';
+export type StudyFilter = 'due' | 'unmastered' | 'all' | 'starred' | 'mastered';
 
 export interface QuizQuestion {
   id: string;

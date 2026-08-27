@@ -9,6 +9,7 @@ interface AppContextType {
   // Word & Study
   words: Word[];
   dueWordsCount: number;
+  unmasteredWordsCount: number;
   masteredWordsCount: number;
   totalWordsCount: number;
   starredWordsCount: number;
@@ -319,6 +320,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Counts
   const totalWordsCount = words.length;
   const masteredWordsCount = words.filter(w => w.box >= 5).length;
+  const unmasteredWordsCount = words.filter(w => (w.box || 1) < 5).length;
   const starredWordsCount = words.filter(w => w.isStarred).length;
   const hsk1WordsCount = words.filter(w => w.source === 'hsk1' || (w.lesson && w.lesson.toLowerCase().includes('hsk'))).length;
   const customWordsCount = words.filter(w => !(w.source === 'hsk1' || (w.lesson && w.lesson.toLowerCase().includes('hsk')))).length;
@@ -629,6 +631,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         words,
         dueWordsCount,
+        unmasteredWordsCount,
         masteredWordsCount,
         totalWordsCount,
         starredWordsCount,
