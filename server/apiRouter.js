@@ -410,6 +410,53 @@ router.post('/reset-hsk1', async (req, res) => {
   }
 });
 
+// 15. Server-side AI Proxy (Completely hides Gemini API Key from Client Network Tab)
+router.get('/ai/health', async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+  res.json({
+    status: apiKey ? 'ready' : 'missing_key',
+    model: process.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash'
+  });
+});
+
+router.post('/ai/generate', async (req, res) => {
+  try {
+    const { prompt, model, isJson, apiKey: clientApiKey } = req.body;
+    const apiKey = clientApiKey || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+
+    if (!apiKey) {
+      return res.status(400).json({ error: 'Chưa cấu hình Google Gemini API Key trên server hoặc cài đặt.' });
+    }
+
+    const targetModel = (model || process.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash').replace(/^models\//, '');
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          ...(isJson ? { responseMimeType: 'application/json' } : {})
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: 'Gemini API Error', details: errText });
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    res.json({ text });
+  } catch (err) {
+    console.error('[AI Proxy Error]:', err);
+    res.status(500).json({ error: 'Lỗi khi gọi AI Proxy từ server', details: err.message });
+  }
+});
+
 // Mount router on both '/' and '/api'
 apiRouter.use('/api', router);
 apiRouter.use('/', router);

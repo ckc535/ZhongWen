@@ -25,7 +25,7 @@ interface StrokeOrderCanvasProps {
 }
 
 export const StrokeOrderCanvas: React.FC<StrokeOrderCanvasProps> = ({ initialChar, onClose }) => {
-  const { words, settings } = useApp();
+  const { words, recordActivity, settings } = useApp();
 
   // Find initial word index
   const initialIndex = useMemo(() => {
@@ -180,6 +180,7 @@ export const StrokeOrderCanvas: React.FC<StrokeOrderCanvasProps> = ({ initialCha
       onComplete: () => {
         soundEffects.playSuccess();
         setPracticeMessage(`🎉 Xuất sắc! Bạn đã hoàn thành đúng 100% chữ "${currentChar}".`);
+        recordActivity();
       }
     });
   };

@@ -30,6 +30,7 @@ interface AppContextType {
   deleteWord: (id: string) => Promise<void>;
   toggleStar: (id: string) => void;
   recordReview: (id: string, remembered: boolean) => void;
+  recordActivity: (targetUser?: UserProfile | null) => Promise<void>;
   resetToHsk1Starter: () => Promise<void>;
 
   // Settings & Navigation
@@ -54,6 +55,23 @@ const DEFAULT_SETTINGS: AppSettings = {
   geminiModel: ENV_MODEL,
   soundEffects: true,
   dailyTarget: 20
+};
+
+export const getLocalDateString = (d: Date = new Date()): string => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const getDaysDifference = (dateStr1: string, dateStr2: string): number => {
+  if (!dateStr1 || !dateStr2) return -1;
+  const [y1, m1, d1] = dateStr1.split('-').map(Number);
+  const [y2, m2, d2] = dateStr2.split('-').map(Number);
+  if (isNaN(y1) || isNaN(y2)) return -1;
+  const utc1 = Date.UTC(y1, m1 - 1, d1);
+  const utc2 = Date.UTC(y2, m2 - 1, d2);
+  return Math.floor((utc2 - utc1) / (1000 * 60 * 60 * 24));
 };
 
 const STORAGE_KEYS = {
@@ -487,6 +505,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ApiService.updateUserProgress(activeUserId, { wordId, isStarred: newStarred });
   }, [activeUserId, currentUserProgressMap]);
 
+  // Record learning activity & automatically calculate/update consecutive day streak
+  const recordActivity = useCallback(async (userToUpdate?: UserProfile | null) => {
+    const user = userToUpdate || currentUser;
+    if (!user) return;
+
+    const todayStr = getLocalDateString();
+    const lastActive = user.lastActiveDate || '';
+
+    // If already recorded activity today, streak is already counted
+    if (lastActive === todayStr) {
+      return;
+    }
+
+    let newStreak = 1;
+    if (lastActive) {
+      const diff = getDaysDifference(lastActive, todayStr);
+      if (diff === 1) {
+        // Consecutive day! Increment streak by 1
+        newStreak = (user.streakDays || 1) + 1;
+      } else if (diff === 0) {
+        newStreak = user.streakDays || 1;
+      } else {
+        // Missed one or more days -> restart at 1
+        newStreak = 1;
+      }
+    }
+
+    const updatedUser: UserProfile = {
+      ...user,
+      streakDays: newStreak,
+      lastActiveDate: todayStr
+    };
+
+    setCurrentUserState(updatedUser);
+    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+
+    // Update in backend MongoDB
+    ApiService.updateUserStats(user.id, {
+      streakDays: newStreak,
+      lastActiveDate: todayStr
+    });
+  }, [currentUser]);
+
   // Record Review Result (Specific to Current User)
   const recordReview = useCallback((wordId: string, remembered: boolean) => {
     const currentProg = currentUserProgressMap[wordId] || {
@@ -517,7 +578,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     ApiService.updateUserProgress(activeUserId, { wordId, remembered });
-  }, [activeUserId, currentUserProgressMap]);
+
+    // Automatically check and record daily streak
+    recordActivity();
+  }, [activeUserId, currentUserProgressMap, recordActivity]);
 
   // Reset to Starter HSK 1 (Lessons 1-3)
   const resetToHsk1Starter = useCallback(async () => {
@@ -584,6 +648,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteWord,
         toggleStar,
         recordReview,
+        recordActivity,
         resetToHsk1Starter,
 
         settings,

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export const QuickQuiz: React.FC = () => {
-  const { words, dueWordsCount, starredWordsCount, hsk1WordsCount, customWordsCount, toggleStar, settings } = useApp();
+  const { words, dueWordsCount, starredWordsCount, hsk1WordsCount, customWordsCount, toggleStar, recordReview, settings } = useApp();
 
   // Quiz Config
   const [filterMode, setFilterMode] = useState<'due' | 'starred' | 'all'>('due');
@@ -147,6 +147,8 @@ export const QuickQuiz: React.FC = () => {
     setIsAnswerChecked(true);
 
     const isCorrect = option === currentQ.correctAnswer;
+    recordReview(currentQ.word.id, isCorrect);
+
     if (isCorrect) {
       soundEffects.playSuccess();
       setScore(prev => prev + 1);

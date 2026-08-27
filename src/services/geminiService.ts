@@ -171,7 +171,22 @@ export class GeminiService {
     GeminiService.setConnectionState('connecting');
     const targetModel = normalizeModelName(envModel);
 
-    // 1. Health-check the active key against Google Gemini API for the exact model in .env
+    // 0. Check server-side secure AI health endpoint first (No key exposed in browser)
+    try {
+      const serverHealth = await fetch('/api/ai/health');
+      if (serverHealth.ok) {
+        const hData = await serverHealth.json();
+        if (hData.status === 'ready') {
+          GeminiService.setConnectionState('connected');
+          console.log(`🟢 [Gemini Engine] Đã kết nối sẵn sàng tới AI Proxy bảo mật (model: "${targetModel}")`);
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 1. Health-check the active key against Google Gemini API for the exact model in .env (Fallback for purely client-side)
     const verifyKey = async (key: string): Promise<boolean> => {
       try {
         const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}?key=${key}`;
@@ -408,6 +423,33 @@ export class GeminiService {
     }
 
     const targetModel = normalizeModelName(envModel);
+
+    // 0. Try secure Backend AI Proxy first (No API key exposed in browser Network tab)
+    try {
+      const proxyRes = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          model: targetModel,
+          isJson,
+          apiKey: apiKeyInput || undefined
+        })
+      });
+
+      if (proxyRes.ok) {
+        const data = await proxyRes.json();
+        if (data.text) {
+          if (onChunk) {
+            onChunk(data.text, data.text);
+          }
+          return data.text;
+        }
+      }
+    } catch {
+      // fallback to direct client call if server proxy is unavailable
+    }
+
     const totalKeys = Math.max(1, GeminiService.keyPool.length);
     let attempts = 0;
     let lastError: Error | null = null;
