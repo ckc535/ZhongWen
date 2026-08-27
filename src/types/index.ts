@@ -107,6 +107,7 @@ export interface AppSettings {
   geminiModel: string;
   voicePitch: number;
   voiceRate: number;
+  voiceURI?: string;
   soundEffects: boolean;
   dailyTarget: number;
 }

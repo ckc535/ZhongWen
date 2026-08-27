@@ -3,6 +3,7 @@ import { Word, UserProfile, UserWordProgress, AppSettings, StudyStats } from '..
 import { soundEffects } from '../services/soundEffects';
 import { ApiService } from '../services/apiService';
 import { GeminiService } from '../services/geminiService';
+import { tts } from '../services/ttsService';
 
 interface AppContextType {
   // Word & Study
@@ -47,7 +48,7 @@ const ENV_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 const ENV_MODEL = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
 
 const DEFAULT_SETTINGS: AppSettings = {
-  voiceRate: 0.85,
+  voiceRate: 0.75,
   voicePitch: 1.0,
   geminiApiKey: ENV_API_KEY,
   geminiModel: ENV_MODEL,

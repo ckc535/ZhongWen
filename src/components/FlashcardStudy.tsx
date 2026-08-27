@@ -107,20 +107,12 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
   }, [currentIndex]);
 
   // Play audio for current word
+  // Play audio for current word
   const playAudio = useCallback(() => {
     if (!currentWord) return;
     soundEffects.playClick();
     tts.speak(currentWord.hanzi, settings.voiceRate, settings.voicePitch);
   }, [currentWord, settings.voiceRate, settings.voicePitch]);
-
-  // Auto-play audio when switching to a new card (Only for hanzi-to-meaning or audio-to-hanzi, not meaning-to-hanzi so we don't spoil the answer)
-  useEffect(() => {
-    if (isStudying && currentWord && !sessionCompleted) {
-      if (direction !== 'meaning-to-hanzi') {
-        playAudio();
-      }
-    }
-  }, [currentIndex, isStudying, sessionCompleted, direction, playAudio]);
 
   const [slideDirection, setSlideDirection] = useState<'next' | 'prev' | 'none'>('none');
   const [isTransitioningCard, setIsTransitioningCard] = useState<boolean>(false);
@@ -129,7 +121,9 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
   const [dragOffset, setDragOffset] = useState<number>(0);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const touchStartRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
+  const hasMovedRef = useRef<boolean>(false);
   const isMouseDownRef = useRef<boolean>(false);
+  const lastTouchEndTimeRef = useRef<number>(0);
 
   // Navigate to another card instantly with slide transition animation
   const goToCard = useCallback((newIndex: number, dir?: 'next' | 'prev') => {
@@ -175,10 +169,11 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
     }
   };
 
-  // Touch Handlers for Mobile Swiping
+  // Touch Handlers for Mobile Swiping (No vertical scroll bounce, no double flip)
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    hasMovedRef.current = false;
     setIsDragging(true);
     setDragOffset(0);
   };
@@ -187,9 +182,9 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
     if (!isDragging) return;
     const touch = e.touches[0];
     const diffX = touch.clientX - touchStartRef.current.x;
-    const diffY = touch.clientY - touchStartRef.current.y;
 
-    if (Math.abs(diffX) > Math.abs(diffY)) {
+    if (Math.abs(diffX) > 8) {
+      hasMovedRef.current = true;
       setDragOffset(diffX);
     }
   };
@@ -197,8 +192,9 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
   const handleTouchEnd = () => {
     if (!isDragging) return;
     setIsDragging(false);
+    lastTouchEndTimeRef.current = Date.now();
 
-    const SWIPE_THRESHOLD = 45; // 45px drag threshold to switch card
+    const SWIPE_THRESHOLD = 40; // 40px drag threshold to switch card
     if (dragOffset < -SWIPE_THRESHOLD) {
       if (currentIndex + 1 < sessionQueue.length) {
         handleNextCard();
@@ -211,7 +207,8 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
       } else {
         soundEffects.playClick();
       }
-    } else if (Math.abs(dragOffset) < 8) {
+    } else if (!hasMovedRef.current) {
+      // Clean tap without drag on mobile
       handleToggleFlip();
     }
 
@@ -220,8 +217,11 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
   // Mouse Handlers for Desktop Dragging
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Ignore synthetic mouse events right after touch
+    if (Date.now() - lastTouchEndTimeRef.current < 600) return;
     touchStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
     isMouseDownRef.current = true;
+    hasMovedRef.current = false;
     setIsDragging(true);
     setDragOffset(0);
   };
@@ -229,13 +229,37 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isMouseDownRef.current) return;
     const diffX = e.clientX - touchStartRef.current.x;
+    if (Math.abs(diffX) > 8) {
+      hasMovedRef.current = true;
+    }
     setDragOffset(diffX);
   };
 
   const handleMouseUp = () => {
+    if (Date.now() - lastTouchEndTimeRef.current < 600) return;
     if (!isMouseDownRef.current) return;
     isMouseDownRef.current = false;
-    handleTouchEnd();
+    setIsDragging(false);
+
+    const SWIPE_THRESHOLD = 40;
+    if (dragOffset < -SWIPE_THRESHOLD) {
+      if (currentIndex + 1 < sessionQueue.length) {
+        handleNextCard();
+      } else {
+        soundEffects.playClick();
+      }
+    } else if (dragOffset > SWIPE_THRESHOLD) {
+      if (currentIndex > 0) {
+        handlePrevCard();
+      } else {
+        soundEffects.playClick();
+      }
+    } else if (!hasMovedRef.current) {
+      // Clean click on desktop
+      handleToggleFlip();
+    }
+
+    setDragOffset(0);
   };
 
   // Handle User Answer: Remembered (✓ Nhớ - Phím 2 - Trượt sang từ tiếp theo)
@@ -403,13 +427,14 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
         {/* ================= REAL 3D FLIP FLASHCARD CONTAINER (WITH SWIPE GESTURES & SLIDE ANIMATION) ================= */}
         <div
           key={currentIndex}
-          className={`w-full perspective-1000 select-none relative touch-pan-y ${
+          className={`w-full perspective-1000 select-none relative touch-none overscroll-none ${
             slideDirection === 'next'
               ? 'animate-slide-next'
               : slideDirection === 'prev'
               ? 'animate-slide-prev'
               : ''
           }`}
+          style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { soundEffects } from '../services/soundEffects';
+import { tts } from '../services/ttsService';
 import {
   Settings,
   X,
@@ -12,7 +13,8 @@ import {
   AlertCircle,
   Users,
   Edit3,
-  Flame
+  Flame,
+  Play
 } from 'lucide-react';
 
 const AVATARS = ['🐼', '🐉', '🐯', '🦊', '🐰', '🎋', '🏮', '🌸', '🍵', '🏯'];
@@ -40,7 +42,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     renameCurrentUser
   } = useApp();
 
-  const [voiceRate, setVoiceRate] = useState<number>(settings.voiceRate);
+  const [voiceRate, setVoiceRate] = useState<number>(settings.voiceRate || 0.75);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string>(settings.voiceURI || '');
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(settings.soundEffects);
 
   // Rename current user state
@@ -50,11 +54,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [importStatus, setImportStatus] = useState<{ success: boolean; message: string } | null>(null);
 
+  useEffect(() => {
+    const load = () => {
+      const v = tts.getAvailableChineseVoices();
+      setAvailableVoices(v);
+    };
+    load();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = load;
+    }
+  }, []);
+
   if (!isOpen) return null;
 
+  const handleTestVoice = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (selectedVoiceURI) {
+      tts.setVoiceByURI(selectedVoiceURI);
+    }
+    tts.speak('你好！欢迎学习中文。', voiceRate);
+  };
+
   const handleSave = () => {
+    if (selectedVoiceURI) {
+      tts.setVoiceByURI(selectedVoiceURI);
+    }
     updateSettings({
       voiceRate,
+      voiceURI: selectedVoiceURI,
       soundEffects: soundEnabled
     });
     soundEffects.playSuccess();
@@ -248,48 +275,95 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* SECTION 2: AUDIO & SPEECH SETTINGS */}
-        <div className="p-4 rounded-2xl bg-[#161311] border border-[#2e2621] space-y-3">
-          <div className="flex items-center gap-1.5">
-            <Volume2 className="w-4 h-4 text-[#df5343]" />
-            <h3 className="text-xs font-bold text-[#f5ede4] uppercase tracking-wider">
-              Cài Đặt Giọng Đọc & Âm Thanh
-            </h3>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] text-[#8e837a] mb-1">Tốc độ phát âm: {voiceRate}x</label>
-              <input
-                type="range"
-                min="0.6"
-                max="1.2"
-                step="0.05"
-                value={voiceRate}
-                onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
-                className="w-full accent-[#df5343] cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-[#8e837a]">
-                <span>Chậm (0.6x)</span>
-                <span>Chuẩn (1.0x)</span>
-                <span>Nhanh (1.2x)</span>
-              </div>
+        <div className="p-4 rounded-2xl bg-[#161311] border border-[#2e2621] space-y-3.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Volume2 className="w-4 h-4 text-[#df5343]" />
+              <h3 className="text-xs font-bold text-[#f5ede4] uppercase tracking-wider">
+                Cài Đặt Giọng Đọc & Âm Thanh
+              </h3>
             </div>
 
-            <div className="flex items-center justify-between p-3 rounded-xl bg-[#1f1a17] border border-[#2e2621]">
-              <span className="text-xs text-[#d8cebe] font-medium">Hiệu ứng âm thanh khi bấm</span>
-              <button
-                type="button"
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`w-11 h-6 rounded-full transition-colors relative ${
-                  soundEnabled ? 'bg-[#df5343]' : 'bg-[#382f29]'
-                }`}
-              >
-                <span
-                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
-                    soundEnabled ? 'left-6' : 'left-1'
-                  }`}
+            <button
+              type="button"
+              onClick={handleTestVoice}
+              className="px-2.5 py-1 rounded-lg bg-[#27211d] hover:bg-[#382f29] text-[#5eb786] border border-[#3e3228] text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+              title="Bấm để nghe thử giọng đọc hiện tại"
+            >
+              <Play className="w-3 h-3 fill-[#5eb786]" />
+              <span>🔊 Nghe thử giọng</span>
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {/* Voice Engine Picker */}
+            <div>
+              <label className="block text-[11px] text-[#8e837a] mb-1">
+                Giọng phát âm tiếng Trung (Mandarin Voice):
+              </label>
+              {availableVoices.length > 0 ? (
+                <select
+                  value={selectedVoiceURI}
+                  onChange={(e) => setSelectedVoiceURI(e.target.value)}
+                  className="w-full bg-[#1f1a17] border border-[#2e2621] rounded-xl px-3 py-2 text-xs text-[#d8cebe] focus:border-[#df5343] focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- Tự động chọn giọng hay nhất (Ưu tiên Natural / Neural) --</option>
+                  {availableVoices.map((v, i) => (
+                    <option key={i} value={v.voiceURI || v.name}>
+                      {v.name} ({v.lang}) {v.name.toLowerCase().includes('natural') || v.name.toLowerCase().includes('neural') ? '⭐ Tự nhiên' : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-[11px] text-[#8e837a] italic">
+                  Đang sử dụng bộ đọc tiếng Trung tiêu chuẩn của thiết bị.
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[11px] text-[#8e837a]">Tốc độ phát âm:</label>
+                  <span className="text-[11px] font-bold text-[#df5343] bg-[#2b1917] px-2 py-0.5 rounded-md border border-[#4d2522]">
+                    {voiceRate}x {voiceRate <= 0.75 ? '(Rõ & Dễ học)' : voiceRate >= 1.0 ? '(Thực tế)' : ''}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="1.2"
+                  step="0.05"
+                  value={voiceRate}
+                  onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
+                  className="w-full accent-[#df5343] cursor-pointer"
                 />
-              </button>
+                <div className="flex justify-between text-[10px] text-[#8e837a]">
+                  <span>0.5x (Rất chậm)</span>
+                  <span>0.75x (Chuẩn mẫu)</span>
+                  <span>1.0x (Tự nhiên)</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-[#1f1a17] border border-[#2e2621]">
+                <div>
+                  <span className="block text-xs text-[#d8cebe] font-medium">Hiệu ứng âm thanh</span>
+                  <span className="block text-[10px] text-[#8e837a]">Tiếng click, lật thẻ, chúc mừng</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSoundEnabled(!soundEnabled)}
+                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                    soundEnabled ? 'bg-[#df5343]' : 'bg-[#382f29]'
+                  }`}
+                >
+                  <span
+                    className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                      soundEnabled ? 'left-6' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           </div>
         </div>
