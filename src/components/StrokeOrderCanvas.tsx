@@ -145,6 +145,20 @@ export const StrokeOrderCanvas: React.FC<StrokeOrderCanvasProps> = ({ initialCha
     } catch (e) {
       console.warn('HanziWriter init error:', e);
     }
+
+    return () => {
+      if (writerInstanceRef.current) {
+        try {
+          writerInstanceRef.current.cancelQuiz();
+        } catch {
+          // ignore
+        }
+        writerInstanceRef.current = null;
+      }
+      if (writerContainerRef.current) {
+        writerContainerRef.current.innerHTML = '';
+      }
+    };
   }, [currentChar]);
 
   // Animate strokes demonstration

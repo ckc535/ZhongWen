@@ -1,21 +1,59 @@
-// Web Speech API Chinese TTS Service with Natural Voice Prioritization
+// Web Speech API Chinese TTS Service with Natural Voice Prioritization & Long-Text Chunking
 
 class TTSService {
   private synth: SpeechSynthesis | null = null;
   private voice: SpeechSynthesisVoice | null = null;
   private selectedVoiceURI: string = '';
+  private voiceReadyPromise: Promise<SpeechSynthesisVoice | null> | null = null;
+  private isSpeakingChunks: boolean = false;
+  private currentChunkIndex: number = 0;
+  private chunksToSpeak: string[] = [];
 
   constructor() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       this.synth = window.speechSynthesis;
-      this.loadVoice();
+      this.ensureVoiceReady();
       if (speechSynthesis.onvoiceschanged !== undefined) {
-        speechSynthesis.onvoiceschanged = () => this.loadVoice();
+        speechSynthesis.onvoiceschanged = () => {
+          this.loadVoice();
+        };
       }
     }
   }
 
-  // Get all available Chinese / Mandarin voices on the user's system
+  public async ensureVoiceReady(): Promise<SpeechSynthesisVoice | null> {
+    if (this.voice) return this.voice;
+    if (this.voiceReadyPromise) return this.voiceReadyPromise;
+
+    this.voiceReadyPromise = new Promise((resolve) => {
+      if (!this.synth) return resolve(null);
+
+      const voices = this.synth.getVoices();
+      if (voices.length > 0) {
+        this.loadVoice();
+        return resolve(this.voice);
+      }
+
+      const timeout = setTimeout(() => {
+        this.loadVoice();
+        resolve(this.voice);
+      }, 1000);
+
+      const handleChanged = () => {
+        clearTimeout(timeout);
+        this.loadVoice();
+        resolve(this.voice);
+      };
+
+      if (this.synth.onvoiceschanged !== undefined) {
+        this.synth.onvoiceschanged = handleChanged;
+      }
+    });
+
+    return this.voiceReadyPromise;
+  }
+
+  // Get all available Chinese / Mandarin voices on user's system
   public getAvailableChineseVoices(): SpeechSynthesisVoice[] {
     if (!this.synth) return [];
     const voices = this.synth.getVoices();
@@ -91,6 +129,33 @@ class TTSService {
     return this.voice ? this.voice.name : 'Mặc định hệ thống';
   }
 
+  /**
+   * Splits long reading passage into bite-sized sentences to prevent Chrome 15s TTS cutoff bug
+   */
+  private splitIntoChunks(text: string): string[] {
+    const rawParts = text.split(/([。！？\n]+)/);
+    const chunks: string[] = [];
+    let current = '';
+
+    for (let i = 0; i < rawParts.length; i++) {
+      current += rawParts[i];
+      if (i % 2 === 1 || current.length > 50) {
+        if (current.trim()) {
+          chunks.push(current.trim());
+        }
+        current = '';
+      }
+    }
+    if (current.trim()) {
+      chunks.push(current.trim());
+    }
+
+    return chunks.length > 0 ? chunks : [text];
+  }
+
+  /**
+   * Speak Chinese text with automatic chunking for long paragraphs
+   */
   public speak(text: string, rate: number = 0.75, pitch: number = 1.0, onEnd?: () => void) {
     if (!this.synth) {
       console.warn('Speech synthesis not supported on this browser.');
@@ -98,32 +163,78 @@ class TTSService {
       return;
     }
 
-    // Cancel any ongoing speech
-    this.synth.cancel();
+    // Stop previous utterance
+    this.stop();
+
+    if (!text || !text.trim()) {
+      onEnd?.();
+      return;
+    }
 
     if (!this.voice) {
       this.loadVoice();
     }
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    if (this.voice) {
-      utterance.voice = this.voice;
+    const chunks = this.splitIntoChunks(text);
+    if (chunks.length <= 1) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-CN';
+      if (this.voice) utterance.voice = this.voice;
+      utterance.rate = Math.max(0.4, Math.min(1.5, rate || 0.75));
+      utterance.pitch = Math.max(0.5, Math.min(1.5, pitch || 1.0));
+
+      if (onEnd) {
+        utterance.onend = () => onEnd();
+        utterance.onerror = () => onEnd();
+      }
+
+      this.synth.speak(utterance);
+      return;
     }
 
-    // Default rate 0.75 is enunciated and clear for Chinese learners
-    utterance.rate = Math.max(0.4, Math.min(1.5, rate || 0.75));
-    utterance.pitch = Math.max(0.5, Math.min(1.5, pitch || 1.0));
+    // Long passage chaining
+    this.isSpeakingChunks = true;
+    this.chunksToSpeak = chunks;
+    this.currentChunkIndex = 0;
 
-    if (onEnd) {
-      utterance.onend = () => onEnd();
-      utterance.onerror = () => onEnd();
-    }
+    const speakNextChunk = () => {
+      if (!this.isSpeakingChunks || !this.synth) {
+        onEnd?.();
+        return;
+      }
 
-    this.synth.speak(utterance);
+      if (this.currentChunkIndex >= this.chunksToSpeak.length) {
+        this.isSpeakingChunks = false;
+        onEnd?.();
+        return;
+      }
+
+      const chunkText = this.chunksToSpeak[this.currentChunkIndex];
+      this.currentChunkIndex++;
+
+      const utterance = new SpeechSynthesisUtterance(chunkText);
+      utterance.lang = 'zh-CN';
+      if (this.voice) utterance.voice = this.voice;
+      utterance.rate = Math.max(0.4, Math.min(1.5, rate || 0.75));
+      utterance.pitch = Math.max(0.5, Math.min(1.5, pitch || 1.0));
+
+      utterance.onend = () => {
+        speakNextChunk();
+      };
+      utterance.onerror = () => {
+        speakNextChunk();
+      };
+
+      this.synth.speak(utterance);
+    };
+
+    speakNextChunk();
   }
 
   public stop() {
+    this.isSpeakingChunks = false;
+    this.chunksToSpeak = [];
+    this.currentChunkIndex = 0;
     if (this.synth) {
       this.synth.cancel();
     }

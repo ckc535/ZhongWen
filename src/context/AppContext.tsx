@@ -478,6 +478,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteWord = useCallback(async (id: string) => {
     ApiService.deleteWord(id);
     setSharedWords(prev => prev.filter(w => w.id !== id));
+    setAllUserProgress(prev => {
+      const next = { ...prev };
+      for (const uid in next) {
+        if (next[uid] && next[uid][id]) {
+          const userCopy = { ...next[uid] };
+          delete userCopy[id];
+          next[uid] = userCopy;
+        }
+      }
+      return next;
+    });
   }, []);
 
   // Toggle Star (Specific to Current User)
@@ -492,19 +503,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const newStarred = !currentProg.isStarred;
+    const newProg: UserWordProgress = {
+      ...currentProg,
+      isStarred: newStarred
+    };
 
     setAllUserProgress(prev => ({
       ...prev,
       [activeUserId]: {
         ...(prev[activeUserId] || {}),
-        [wordId]: {
-          ...currentProg,
-          isStarred: newStarred
-        }
+        [wordId]: newProg
       }
     }));
 
-    ApiService.updateUserProgress(activeUserId, { wordId, isStarred: newStarred });
+    ApiService.updateUserProgress(activeUserId, { wordId, progress: newProg });
   }, [activeUserId, currentUserProgressMap]);
 
   // Record learning activity & automatically calculate/update consecutive day streak
@@ -579,9 +591,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }));
 
-    ApiService.updateUserProgress(activeUserId, { wordId, remembered });
+    // Truyền đầy đủ newProg vào ApiService để hàng đợi batch đồng bộ chính xác lên MongoDB Atlas
+    ApiService.updateUserProgress(activeUserId, { wordId, progress: newProg });
 
-    // Automatically check and record daily streak
+    // Tự động kiểm tra và ghi nhận chuỗi ngày học nếu chưa ghi nhận hôm nay
     recordActivity();
   }, [activeUserId, currentUserProgressMap, recordActivity]);
 
@@ -601,17 +614,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Export JSON
   const exportData = useCallback(() => {
-    return JSON.stringify({ sharedWords, users, allUserProgress, settings }, null, 2);
+    return JSON.stringify(
+      {
+        version: '2.0',
+        exportedAt: new Date().toISOString(),
+        sharedWords,
+        users,
+        allUserProgress,
+        settings
+      },
+      null,
+      2
+    );
   }, [sharedWords, users, allUserProgress, settings]);
 
-  // Import JSON
+  // Import JSON with automatic database sync
   const importData = useCallback((jsonData: string): boolean => {
     try {
       const parsed = JSON.parse(jsonData);
-      if (parsed.sharedWords) setSharedWords(parsed.sharedWords);
-      if (parsed.words) setSharedWords(parsed.words);
-      if (parsed.users) setUsers(parsed.users);
-      if (parsed.allUserProgress) setAllUserProgress(parsed.allUserProgress);
+      const incomingWords = parsed.sharedWords || parsed.words;
+      if (Array.isArray(incomingWords) && incomingWords.length > 0) {
+        setSharedWords(incomingWords);
+        ApiService.addBatchWords(incomingWords).catch(() => {});
+      }
+      if (Array.isArray(parsed.users) && parsed.users.length > 0) {
+        setUsers(parsed.users);
+      }
+      if (parsed.allUserProgress && typeof parsed.allUserProgress === 'object') {
+        setAllUserProgress(parsed.allUserProgress);
+        for (const [uid, userProgMap] of Object.entries(parsed.allUserProgress)) {
+          for (const [wId, p] of Object.entries(userProgMap as Record<string, any>)) {
+            ApiService.queueProgressUpdate(uid, wId, p);
+          }
+        }
+        ApiService.flushProgressQueue().catch(() => {});
+      }
+      if (parsed.settings && typeof parsed.settings === 'object') {
+        setSettings(prev => ({ ...prev, ...parsed.settings }));
+      }
       return true;
     } catch {
       return false;

@@ -122,8 +122,8 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
   const [addedNewWordHanzis, setAddedNewWordHanzis] = useState<Set<string>>(new Set());
 
   const handleGenerateStory = async () => {
-    const envApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-    const envModel = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
+    const activeApiKey = settings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
+    const activeModel = settings.geminiModel || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
 
     setIsStreaming(true);
     setStreamProgressText('');
@@ -146,8 +146,8 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
         level,
         format,
         lengthConfig,
-        envApiKey,
-        envModel,
+        activeApiKey,
+        activeModel,
         (accumulatedText) => {
           setStreamProgressText(accumulatedText);
           if (accumulatedText.length > 30) {
@@ -174,8 +174,8 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
       return;
     }
 
-    const envApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-    const envModel = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
+    const activeApiKey = settings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
+    const activeModel = settings.geminiModel || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
 
     setIsStreaming(true);
     setStreamProgressText('');
@@ -189,8 +189,8 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
       const result = await GeminiService.analyzeCustomPassageStream(
         customPassageText.trim(),
         words,
-        envApiKey,
-        envModel,
+        activeApiKey,
+        activeModel,
         (accumulatedText) => {
           setStreamProgressText(accumulatedText);
           if (accumulatedText.length > 30) {

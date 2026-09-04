@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Word } from '../types';
 import { GeminiService } from '../services/geminiService';
@@ -108,11 +108,15 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     setAiError(null);
 
     try {
-      const result = await GeminiService.autoFillWord({
-        hanzi: inputHanzi.trim(),
-        pinyin: inputPinyin.trim(),
-        vietnamese: inputVietnamese.trim() || inputHanViet.trim()
-      });
+      const result = await GeminiService.autoFillWord(
+        {
+          hanzi: inputHanzi.trim(),
+          pinyin: inputPinyin.trim(),
+          vietnamese: inputVietnamese.trim() || inputHanViet.trim()
+        },
+        settings.geminiApiKey,
+        settings.geminiModel
+      );
 
       if (result.hanzi) setInputHanzi(result.hanzi);
       if (result.pinyin) setInputPinyin(result.pinyin);
@@ -139,11 +143,15 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     setIsAiEditLoading(true);
 
     try {
-      const result = await GeminiService.autoFillWord({
-        hanzi: editingWord.hanzi?.trim(),
-        pinyin: editingWord.pinyin?.trim(),
-        vietnamese: editingWord.vietnamese?.trim() || editingWord.hanViet?.trim()
-      });
+      const result = await GeminiService.autoFillWord(
+        {
+          hanzi: editingWord.hanzi?.trim(),
+          pinyin: editingWord.pinyin?.trim(),
+          vietnamese: editingWord.vietnamese?.trim() || editingWord.hanViet?.trim()
+        },
+        settings.geminiApiKey,
+        settings.geminiModel
+      );
 
       setEditingWord(prev => {
         if (!prev) return null;
@@ -260,47 +268,51 @@ export const WordManagement: React.FC<WordManagementProps> = ({
   };
 
   // 1. Words filtered by Category Tab (used for consistent count badges)
-  const categoryWords = words.filter(word => {
-    const isHsk = word.source === 'hsk1' || (word.lesson && word.lesson.toLowerCase().includes('hsk'));
-    if (categoryTab === 'hsk1') {
-      return isHsk;
-    } else if (categoryTab === 'custom') {
-      return !isHsk;
-    }
-    return true;
-  });
+  const categoryWords = useMemo(() => {
+    return words.filter(word => {
+      const isHsk = word.source === 'hsk1' || (word.lesson && word.lesson.toLowerCase().includes('hsk'));
+      if (categoryTab === 'hsk1') {
+        return isHsk;
+      } else if (categoryTab === 'custom') {
+        return !isHsk;
+      }
+      return true;
+    });
+  }, [words, categoryTab]);
 
   // Fixed counts for all 4 status filter tabs
   const allCategoryCount = categoryWords.length;
-  const unmasteredCount = categoryWords.filter(w => w.box < 5).length;
-  const masteredCount = categoryWords.filter(w => w.box >= 5).length;
-  const starredCount = categoryWords.filter(w => w.isStarred).length;
+  const unmasteredCount = useMemo(() => categoryWords.filter(w => w.box < 5).length, [categoryWords]);
+  const masteredCount = useMemo(() => categoryWords.filter(w => w.box >= 5).length, [categoryWords]);
+  const starredCount = useMemo(() => categoryWords.filter(w => w.isStarred).length, [categoryWords]);
 
   // 2. Filtered words list (applying search query, status filter, and sorted newest first)
-  const filteredWords = categoryWords
-    .filter(word => {
-      // Search query match
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchHanzi = word.hanzi.toLowerCase().includes(q);
-        const matchPinyin = word.pinyin.toLowerCase().includes(q);
-        const matchVi = word.vietnamese.toLowerCase().includes(q);
-        const matchHanViet = word.hanViet ? word.hanViet.toLowerCase().includes(q) : false;
-        if (!matchHanzi && !matchPinyin && !matchVi && !matchHanViet) return false;
-      }
+  const filteredWords = useMemo(() => {
+    return categoryWords
+      .filter(word => {
+        // Search query match
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const matchHanzi = word.hanzi.toLowerCase().includes(q);
+          const matchPinyin = word.pinyin.toLowerCase().includes(q);
+          const matchVi = word.vietnamese.toLowerCase().includes(q);
+          const matchHanViet = word.hanViet ? word.hanViet.toLowerCase().includes(q) : false;
+          if (!matchHanzi && !matchPinyin && !matchVi && !matchHanViet) return false;
+        }
 
-      // Status filter (Tất cả / Chưa thuộc / Đã thuộc / Từ khó)
-      if (filterStatus === 'unmastered') {
-        if (word.box >= 5) return false;
-      } else if (filterStatus === 'mastered') {
-        if (word.box < 5) return false;
-      } else if (filterStatus === 'starred') {
-        if (!word.isStarred) return false;
-      }
+        // Status filter (Tất cả / Chưa thuộc / Đã thuộc / Từ khó)
+        if (filterStatus === 'unmastered') {
+          if (word.box >= 5) return false;
+        } else if (filterStatus === 'mastered') {
+          if (word.box < 5) return false;
+        } else if (filterStatus === 'starred') {
+          if (!word.isStarred) return false;
+        }
 
-      return true;
-    })
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        return true;
+      })
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }, [categoryWords, searchQuery, filterStatus]);
 
   // Pagination calculation
   const totalItems = filteredWords.length;

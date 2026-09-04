@@ -4,10 +4,10 @@ import { HSK1_ALL_LESSONS } from './hsk1StarterData.js';
 
 export const apiRouter = express();
 
-apiRouter.use(express.json());
+apiRouter.use(express.json({ limit: '10mb' }));
 
 const router = express.Router();
-router.use(express.json());
+router.use(express.json({ limit: '10mb' }));
 
 // Prevent any caching on API endpoints
 router.use((_req, res, next) => {
@@ -17,10 +17,42 @@ router.use((_req, res, next) => {
   next();
 });
 
+// ==================== HELPER: MULTI-KEY POOL & ROTATION ====================
+function getServerKeyPool() {
+  const raw = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+  return raw
+    .split(/[,;\n]+/)
+    .map(k => k.trim())
+    .filter(k => k.length > 0);
+}
+
+let serverActiveKeyIndex = 0;
+
+function getActiveServerKey(clientKey) {
+  if (clientKey && typeof clientKey === 'string' && clientKey.trim().length > 0) {
+    return clientKey.trim();
+  }
+  const pool = getServerKeyPool();
+  if (pool.length === 0) return '';
+  if (serverActiveKeyIndex >= pool.length) {
+    serverActiveKeyIndex = 0;
+  }
+  return pool[serverActiveKeyIndex];
+}
+
+function rotateServerKey() {
+  const pool = getServerKeyPool();
+  if (pool.length <= 1) return null;
+  serverActiveKeyIndex = (serverActiveKeyIndex + 1) % pool.length;
+  console.log(`[AI Server Pool] Đã xoay sang Key #${serverActiveKeyIndex + 1}/${pool.length}`);
+  return pool[serverActiveKeyIndex];
+}
+
 // 1. Health check
 router.get('/health', async (req, res) => {
   try {
     const { db } = await connectToDatabase();
+    await db.command({ ping: 1 });
     res.json({ status: 'ok', database: 'mongodb', time: Date.now() });
   } catch (err) {
     res.status(500).json({ status: 'error', error: err.message });
@@ -31,10 +63,12 @@ router.get('/health', async (req, res) => {
 router.get('/data', async (req, res) => {
   try {
     const { db } = await connectToDatabase();
-    const words = await db.collection('words').find({}, { projection: { _id: 0 } }).sort({ createdAt: -1, _id: -1 }).toArray();
-    const users = await db.collection('users').find({}, { projection: { _id: 0 } }).toArray();
-    const progressList = await db.collection('user_progress').find({}, { projection: { _id: 0 } }).toArray();
-    const settingsDoc = await db.collection('settings').findOne({ id: 'app_settings' }, { projection: { _id: 0 } });
+    const [words, users, progressList, settingsDoc] = await Promise.all([
+      db.collection('words').find({}, { projection: { _id: 0 } }).sort({ createdAt: -1, _id: -1 }).toArray(),
+      db.collection('users').find({}, { projection: { _id: 0 } }).toArray(),
+      db.collection('user_progress').find({}, { projection: { _id: 0 } }).toArray(),
+      db.collection('settings').findOne({ id: 'app_settings' }, { projection: { _id: 0 } })
+    ]);
 
     // Map user progress to { [userId]: { [wordId]: progress } }
     const userProgress = {};
@@ -97,8 +131,9 @@ router.post('/words', async (req, res) => {
       });
     }
 
+    const now = Date.now();
     const newWord = {
-      id: wordData.id || `w-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: wordData.id || `w-${now}-${Math.random().toString(36).substring(2, 6)}`,
       hanzi,
       pinyin: wordData.pinyin?.trim() || '',
       vietnamese: wordData.vietnamese?.trim() || '',
@@ -116,7 +151,7 @@ router.post('/words', async (req, res) => {
       reviewCount: wordData.reviewCount || 0,
       correctCount: wordData.correctCount || 0,
       wrongCount: wordData.wrongCount || 0,
-      createdAt: wordData.createdAt || Date.now()
+      createdAt: wordData.createdAt || now
     };
 
     await wordsCol.insertOne(newWord);
@@ -127,7 +162,7 @@ router.post('/words', async (req, res) => {
   }
 });
 
-// 5. Add batch words (Filter out existing Hanzis to prevent duplicates)
+// 5. Add batch words (High-speed indexed lookup to prevent duplicates)
 router.post('/words/batch', async (req, res) => {
   try {
     const { words: newWords } = req.body;
@@ -138,9 +173,16 @@ router.post('/words/batch', async (req, res) => {
     const { db } = await connectToDatabase();
     const wordsCol = db.collection('words');
 
-    // Get all existing hanzis
-    const existingWords = await wordsCol.find({}, { projection: { hanzi: 1 } }).toArray();
-    const existingHanzis = new Set(existingWords.map(w => w.hanzi));
+    // Extract all non-empty hanzis
+    const candidateHanzis = newWords
+      .map(w => w.hanzi?.trim())
+      .filter(Boolean);
+
+    // Optimized: Only query candidate hanzis with indexed $in lookup (O(1)) instead of loading entire collection
+    const existingMatches = await wordsCol
+      .find({ hanzi: { $in: candidateHanzis } }, { projection: { hanzi: 1 } })
+      .toArray();
+    const existingHanzis = new Set(existingMatches.map(w => w.hanzi));
 
     // Filter duplicates within incoming list and against database
     const seenIncoming = new Set();
@@ -158,8 +200,9 @@ router.post('/words/batch', async (req, res) => {
       return res.json({ success: true, count: 0, words: [] });
     }
 
+    const now = Date.now();
     const formattedWords = uniqueIncoming.map((w, index) => ({
-      id: w.id || `w-batch-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 5)}`,
+      id: w.id || `w-batch-${now}-${index}-${Math.random().toString(36).substring(2, 5)}`,
       hanzi: w.hanzi.trim(),
       pinyin: w.pinyin?.trim() || '',
       vietnamese: w.vietnamese?.trim() || '',
@@ -177,10 +220,10 @@ router.post('/words/batch', async (req, res) => {
       reviewCount: 0,
       correctCount: 0,
       wrongCount: 0,
-      createdAt: Date.now() + index
+      createdAt: now + index
     }));
 
-    await wordsCol.insertMany(formattedWords);
+    await wordsCol.insertMany(formattedWords, { ordered: false });
     res.status(201).json({ success: true, count: formattedWords.length, words: formattedWords });
   } catch (err) {
     res.status(500).json({ error: 'Failed to add batch words', details: err.message });
@@ -218,8 +261,10 @@ router.delete('/words/:id', async (req, res) => {
     const { id } = req.params;
     const { db } = await connectToDatabase();
 
-    await db.collection('words').deleteOne({ id });
-    await db.collection('user_progress').deleteMany({ wordId: id });
+    await Promise.all([
+      db.collection('words').deleteOne({ id }),
+      db.collection('user_progress').deleteMany({ wordId: id })
+    ]);
 
     res.json({ success: true });
   } catch (err) {
@@ -256,7 +301,8 @@ router.post('/users', async (req, res) => {
         name: trimmedName,
         avatar: avatar || '🐉',
         streakDays: 1,
-        lastActiveDate: new Date().toISOString()
+        lastActiveDate: new Date().toISOString().split('T')[0],
+        createdAt: Date.now()
       };
       await db.collection('users').insertOne(newUser);
       const { _id, ...cleanUser } = newUser;
@@ -302,8 +348,10 @@ router.delete('/users/:id', async (req, res) => {
     const { id } = req.params;
     const { db } = await connectToDatabase();
 
-    await db.collection('users').deleteOne({ id });
-    await db.collection('user_progress').deleteMany({ userId: id });
+    await Promise.all([
+      db.collection('users').deleteOne({ id }),
+      db.collection('user_progress').deleteMany({ userId: id })
+    ]);
 
     res.json({ success: true });
   } catch (err) {
@@ -311,12 +359,14 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
-// 12. Save User Word Progress (SRS Flashcard Learning State)
+// 12. Save Single User Word Progress (Supports both nested progress and flat fields)
 router.post('/progress', async (req, res) => {
   try {
-    const { userId, wordId, progress } = req.body;
-    if (!userId || !wordId || !progress) {
-      return res.status(400).json({ error: 'userId, wordId, and progress are required' });
+    const { userId, wordId } = req.body;
+    const p = req.body.progress || req.body;
+
+    if (!userId || !wordId) {
+      return res.status(400).json({ error: 'userId and wordId are required' });
     }
 
     const updateFields = {
@@ -324,12 +374,12 @@ router.post('/progress', async (req, res) => {
       wordId,
       updatedAt: Date.now()
     };
-    if (progress.box !== undefined) updateFields.box = progress.box;
-    if (progress.isStarred !== undefined) updateFields.isStarred = progress.isStarred;
-    if (progress.reviewCount !== undefined) updateFields.reviewCount = progress.reviewCount;
-    if (progress.correctCount !== undefined) updateFields.correctCount = progress.correctCount;
-    if (progress.wrongCount !== undefined) updateFields.wrongCount = progress.wrongCount;
-    if (progress.lastReviewed !== undefined) updateFields.lastReviewed = progress.lastReviewed;
+    if (p.box !== undefined) updateFields.box = p.box;
+    if (p.isStarred !== undefined) updateFields.isStarred = p.isStarred;
+    if (p.reviewCount !== undefined) updateFields.reviewCount = p.reviewCount;
+    if (p.correctCount !== undefined) updateFields.correctCount = p.correctCount;
+    if (p.wrongCount !== undefined) updateFields.wrongCount = p.wrongCount;
+    if (p.lastReviewed !== undefined) updateFields.lastReviewed = p.lastReviewed;
 
     const { db } = await connectToDatabase();
     await db.collection('user_progress').updateOne(
@@ -354,7 +404,63 @@ router.post('/progress', async (req, res) => {
   }
 });
 
-// 13. Update User Streak
+// 13. Batch Save User Word Progress (Using MongoDB bulkWrite for ultra-fast performance)
+router.post('/progress/batch', async (req, res) => {
+  try {
+    const { userId, updates } = req.body;
+    if (!userId || !Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ error: 'userId and valid updates array are required' });
+    }
+
+    const { db } = await connectToDatabase();
+    const progressCol = db.collection('user_progress');
+    const now = Date.now();
+
+    const bulkOps = updates.map(item => {
+      const p = item.progress || item;
+      const updateFields = {
+        userId,
+        wordId: item.wordId,
+        updatedAt: now
+      };
+      if (p.box !== undefined) updateFields.box = p.box;
+      if (p.isStarred !== undefined) updateFields.isStarred = p.isStarred;
+      if (p.reviewCount !== undefined) updateFields.reviewCount = p.reviewCount;
+      if (p.correctCount !== undefined) updateFields.correctCount = p.correctCount;
+      if (p.wrongCount !== undefined) updateFields.wrongCount = p.wrongCount;
+      if (p.lastReviewed !== undefined) updateFields.lastReviewed = p.lastReviewed;
+
+      return {
+        updateOne: {
+          filter: { userId, wordId: item.wordId },
+          update: {
+            $set: updateFields,
+            $setOnInsert: {
+              box: 1,
+              isStarred: false,
+              reviewCount: 0,
+              correctCount: 0,
+              wrongCount: 0,
+              lastReviewed: null
+            }
+          },
+          upsert: true
+        }
+      };
+    });
+
+    const result = await progressCol.bulkWrite(bulkOps, { ordered: false });
+    res.json({
+      success: true,
+      modifiedCount: result.modifiedCount,
+      upsertedCount: result.upsertedCount
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to batch save progress', details: err.message });
+  }
+});
+
+// 14. Update User Streak
 router.put('/users/:id/streak', async (req, res) => {
   try {
     const { id } = req.params;
@@ -381,7 +487,7 @@ router.put('/users/:id/streak', async (req, res) => {
   }
 });
 
-// 14. Reset to Starter HSK 1 Words (Bài 1, 2, 3)
+// 15. Reset to Starter HSK 1 Words (Bài 1, 2, 3)
 router.post('/reset-hsk1', async (req, res) => {
   try {
     const { db } = await connectToDatabase();
@@ -413,54 +519,182 @@ router.post('/reset-hsk1', async (req, res) => {
       }))
     );
 
-    await wordsCol.insertMany(starterWords);
+    await wordsCol.insertMany(starterWords, { ordered: false });
     res.json({ success: true, count: starterWords.length });
   } catch (err) {
     res.status(500).json({ error: 'Failed to reset HSK1 words', details: err.message });
   }
 });
 
-// 15. Server-side AI Proxy (Completely hides Gemini API Key from Client Network Tab)
-router.get('/ai/health', async (req, res) => {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+// ==================== 16. SERVER-SIDE AI PROXY (MULTI-KEY & SECURE STREAMING) ====================
+
+// AI Proxy Health Check
+router.get('/ai/health', async (_req, res) => {
+  const pool = getServerKeyPool();
   res.json({
-    status: apiKey ? 'ready' : 'missing_key',
-    model: process.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash'
+    status: pool.length > 0 ? 'ready' : 'missing_key',
+    keyCount: pool.length,
+    activeKeyIndex: (serverActiveKeyIndex % Math.max(1, pool.length)) + 1,
+    model: process.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite'
   });
 });
 
+// Realtime Server-Sent Events (SSE) AI Streaming Proxy
+router.post('/ai/generate-stream', async (req, res) => {
+  const { prompt, model, isJson, apiKey: clientApiKey } = req.body;
+  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+    return res.status(400).json({ error: 'Prompt không được để trống' });
+  }
+
+  const pool = clientApiKey ? [clientApiKey.trim()] : getServerKeyPool();
+  if (pool.length === 0) {
+    return res.status(400).json({ error: 'Chưa cấu hình Google Gemini API Key trên server hoặc cài đặt.' });
+  }
+
+  const targetModel = (model || process.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite').replace(/^models\//, '');
+
+  // Setup Server-Sent Events Headers
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform, no-store');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const controller = new AbortController();
+  req.on('close', () => controller.abort());
+
+  let success = false;
+  let attempts = 0;
+  const maxAttempts = pool.length;
+
+  while (attempts < maxAttempts && !success) {
+    const currentKey = pool[serverActiveKeyIndex % pool.length];
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${currentKey}&alt=sse`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            ...(isJson ? { responseMimeType: 'application/json' } : {})
+          }
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        if ((response.status === 429 || response.status === 403) && pool.length > 1) {
+          console.warn(`[AI Stream Proxy] Key #${(serverActiveKeyIndex % pool.length) + 1} quá tải (${response.status}). Chuyển sang key tiếp theo...`);
+          serverActiveKeyIndex++;
+          attempts++;
+          continue;
+        }
+
+        const errText = await response.text();
+        res.write(`event: error\ndata: ${JSON.stringify({ error: `Gemini API Error: ${errText}` })}\n\n`);
+        return res.end();
+      }
+
+      if (!response.body) {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: 'Không nhận được dữ liệu stream' })}\n\n`);
+        return res.end();
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        res.write(chunk);
+        if (typeof res.flush === 'function') {
+          res.flush();
+        }
+      }
+
+      res.write('\nevent: done\ndata: [DONE]\n\n');
+      res.end();
+      success = true;
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return;
+      }
+      serverActiveKeyIndex++;
+      attempts++;
+      if (attempts >= maxAttempts) {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
+        return res.end();
+      }
+    }
+  }
+});
+
+// Non-streaming AI Proxy with Multi-Key Rotation and Auto-Timeout
 router.post('/ai/generate', async (req, res) => {
   try {
     const { prompt, model, isJson, apiKey: clientApiKey } = req.body;
-    const apiKey = clientApiKey || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+    const pool = clientApiKey ? [clientApiKey.trim()] : getServerKeyPool();
 
-    if (!apiKey) {
+    if (pool.length === 0) {
       return res.status(400).json({ error: 'Chưa cấu hình Google Gemini API Key trên server hoặc cài đặt.' });
     }
 
-    const targetModel = (model || process.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash').replace(/^models\//, '');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+    const targetModel = (model || process.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite').replace(/^models\//, '');
+    let attempts = 0;
+    const maxAttempts = pool.length;
+    let lastError = null;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.3,
-          ...(isJson ? { responseMimeType: 'application/json' } : {})
+    while (attempts < maxAttempts) {
+      const currentKey = pool[serverActiveKeyIndex % pool.length];
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${currentKey}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              ...(isJson ? { responseMimeType: 'application/json' } : {})
+            }
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          if ((response.status === 429 || response.status === 403) && pool.length > 1) {
+            console.warn(`[AI Proxy] Key #${(serverActiveKeyIndex % pool.length) + 1} gặp lỗi ${response.status}. Thử key tiếp theo...`);
+            serverActiveKeyIndex++;
+            attempts++;
+            continue;
+          }
+          const errText = await response.text();
+          return res.status(response.status).json({ error: 'Gemini API Error', details: errText });
         }
-      })
-    });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(response.status).json({ error: 'Gemini API Error', details: errText });
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return res.json({ success: true, text });
+      } catch (err) {
+        lastError = err;
+        serverActiveKeyIndex++;
+        attempts++;
+      }
     }
 
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    res.json({ text });
+    return res.status(500).json({
+      error: 'Tất cả API keys đều bị lỗi hoặc hết quota hôm nay',
+      details: lastError?.message
+    });
   } catch (err) {
     console.error('[AI Proxy Error]:', err);
     res.status(500).json({ error: 'Lỗi khi gọi AI Proxy từ server', details: err.message });

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { soundEffects } from '../services/soundEffects';
 import { tts } from '../services/ttsService';
+import { GeminiService } from '../services/geminiService';
 import {
   Settings,
   X,
@@ -14,7 +15,11 @@ import {
   Users,
   Edit3,
   Flame,
-  Play
+  Play,
+  Sparkles,
+  Eye,
+  EyeOff,
+  Loader2
 } from 'lucide-react';
 
 const AVATARS = ['🐼', '🐉', '🐯', '🦊', '🐰', '🎋', '🏮', '🌸', '🍵', '🏯'];
@@ -47,6 +52,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(settings.soundEffects);
 
+  // Gemini AI Settings State
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(settings.geminiApiKey || '');
+  const [geminiModel, setGeminiModel] = useState<string>(settings.geminiModel || 'gemini-3.5-flash-lite');
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [testAiStatus, setTestAiStatus] = useState<{ testing: boolean; success?: boolean; message?: string } | null>(null);
+
   // Rename current user state
   const [isRenaming, setIsRenaming] = useState<boolean>(false);
   const [renameName, setRenameName] = useState<string>(currentUser?.name || '');
@@ -75,6 +86,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     tts.speak('你好！欢迎学习中文。', voiceRate);
   };
 
+  const handleTestAi = async () => {
+    setTestAiStatus({ testing: true });
+    try {
+      const ok = await GeminiService.testGeminiApiKey(geminiApiKey, geminiModel);
+      if (ok) {
+        setTestAiStatus({ testing: false, success: true, message: `Kết nối thành công tới mô hình "${geminiModel}"!` });
+        soundEffects.playSuccess();
+      } else {
+        setTestAiStatus({ testing: false, success: false, message: 'Không thể kết nối. Vui lòng kiểm tra API Key hoặc hạn mức quota.' });
+        soundEffects.playWrong();
+      }
+    } catch (err: any) {
+      setTestAiStatus({ testing: false, success: false, message: err.message || 'Lỗi kiểm tra kết nối AI' });
+      soundEffects.playWrong();
+    }
+  };
+
   const handleSave = () => {
     if (selectedVoiceURI) {
       tts.setVoiceByURI(selectedVoiceURI);
@@ -82,7 +110,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     updateSettings({
       voiceRate,
       voiceURI: selectedVoiceURI,
-      soundEffects: soundEnabled
+      soundEffects: soundEnabled,
+      geminiApiKey: geminiApiKey.trim(),
+      geminiModel: geminiModel.trim()
     });
     soundEffects.playSuccess();
     onClose();
@@ -129,24 +159,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
     };
     reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const handleResetData = () => {
-    if (window.confirm('Bạn có chắc muốn xóa tất cả từ tự thêm và khôi phục về danh sách New HSK 1 mặc định?')) {
-      resetToHsk1Starter();
-      soundEffects.playClick();
-      onClose();
-    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="w-full max-w-xl p-6 sm:p-7 rounded-3xl bg-[#1f1a17] border border-[#2e2621] shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto no-scrollbar">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="w-full max-w-xl p-6 rounded-3xl bg-[#1f1a17] border border-[#2e2621] shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#2e2621] pb-3">
+        <div className="flex items-center justify-between pb-3 border-b border-[#2e2621]">
           <div className="flex items-center gap-2">
-            <Settings className="w-5 h-5 text-[#df5343]" />
+            <Settings className="w-4 h-4 text-[#df5343]" />
             <h2 className="text-sm font-bold uppercase tracking-wider text-[#f5ede4]">
               Cài Đặt Hệ Thống
             </h2>
@@ -159,7 +180,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* SECTION 0: USER PROFILE MANAGEMENT (ĐỔI TÊN / CHUYỂN USER) */}
+        {/* SECTION 0: USER PROFILE MANAGEMENT */}
         <div className="p-4 rounded-2xl bg-[#161311] border border-[#2e2621] space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
@@ -215,7 +236,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 className="px-3 py-1.5 rounded-xl bg-[#27211d] hover:bg-[#322a25] text-xs font-semibold text-[#d8cebe] border border-[#382f29] flex items-center gap-1 transition-colors"
               >
                 <Edit3 className="w-3.5 h-3.5 text-[#e5a044]" />
-                <span>{isRenaming ? 'Đóng' : 'Đổi tên của tôi'}</span>
+                <span>{isRenaming ? 'Đóng' : 'Đổi tên'}</span>
               </button>
             </div>
           )}
@@ -274,6 +295,93 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </div>
 
+        {/* SECTION 1: GOOGLE GEMINI AI CONFIGURATION */}
+        <div className="p-4 rounded-2xl bg-[#161311] border border-[#2e2621] space-y-3.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-[#df5343]" />
+              <h3 className="text-xs font-bold text-[#f5ede4] uppercase tracking-wider">
+                Cấu Hình Google Gemini AI
+              </h3>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleTestAi}
+              disabled={testAiStatus?.testing}
+              className="px-2.5 py-1 rounded-lg bg-[#27211d] hover:bg-[#382f29] text-[#e5a044] border border-[#3e3228] text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+            >
+              {testAiStatus?.testing ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin text-[#e5a044]" />
+                  <span>Đang test...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3 h-3 text-[#e5a044]" />
+                  <span>⚡ Kiểm tra AI</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {/* API Key Input */}
+            <div>
+              <label className="block text-xs font-medium text-[#d8cebe] mb-1">
+                Google Gemini API Key
+              </label>
+              <div className="relative flex items-center">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="Để trống sẽ dùng API Key mặc định từ file .env"
+                  className="w-full h-9 bg-[#1f1a17] border border-[#2e2621] focus:border-[#df5343] rounded-xl pl-3 pr-9 text-xs text-[#f5ede4] focus:outline-none font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-2.5 text-[#8e837a] hover:text-[#f5ede4] cursor-pointer"
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-[#8e837a] mt-1">
+                Có thể nhập nhiều key cách nhau bằng dấu phẩy (,) để hệ thống tự động xoay vòng khi hết quota.
+              </p>
+            </div>
+
+            {/* AI Model Selector */}
+            <div>
+              <label className="block text-xs font-medium text-[#d8cebe] mb-1">
+                Mô hình AI sử dụng
+              </label>
+              <select
+                value={geminiModel}
+                onChange={(e) => setGeminiModel(e.target.value)}
+                className="w-full h-9 bg-[#1f1a17] border border-[#2e2621] focus:border-[#df5343] rounded-xl px-3 text-xs text-[#f5ede4] focus:outline-none cursor-pointer"
+              >
+                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Siêu tốc độ & Tiết kiệm token - Khuyên dùng)</option>
+                <option value="gemini-3.6-flash">Gemini 3.6 Flash (Cân bằng & Chuẩn xác)</option>
+                <option value="gemini-3.7-flash">Gemini 3.7 Flash (Mô hình thông minh cao cấp)</option>
+              </select>
+            </div>
+
+            {/* Test Status Message */}
+            {testAiStatus && !testAiStatus.testing && (
+              <div className={`p-2.5 rounded-xl text-xs flex items-center gap-1.5 ${
+                testAiStatus.success
+                  ? 'bg-[#1e2a22] text-[#62ba89] border border-[#2d4734]'
+                  : 'bg-[#2b1917] text-[#e05344] border border-[#4d2522]'
+              }`}>
+                {testAiStatus.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                <span>{testAiStatus.message}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* SECTION 2: AUDIO & SPEECH SETTINGS */}
         <div className="p-4 rounded-2xl bg-[#161311] border border-[#2e2621] space-y-3.5">
           <div className="flex items-center justify-between">
@@ -298,77 +406,69 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="space-y-3">
             {/* Voice Engine Picker */}
             <div>
-              <label className="block text-[11px] text-[#8e837a] mb-1">
-                Giọng phát âm tiếng Trung (Mandarin Voice):
+              <label className="block text-xs font-medium text-[#d8cebe] mb-1">
+                Giọng phát âm tiếng Trung:
               </label>
-              {availableVoices.length > 0 ? (
-                <select
-                  value={selectedVoiceURI}
-                  onChange={(e) => setSelectedVoiceURI(e.target.value)}
-                  className="w-full bg-[#1f1a17] border border-[#2e2621] rounded-xl px-3 py-2 text-xs text-[#d8cebe] focus:border-[#df5343] focus:outline-none cursor-pointer"
-                >
-                  <option value="">-- Tự động chọn giọng hay nhất (Ưu tiên Natural / Neural) --</option>
-                  {availableVoices.map((v, i) => (
-                    <option key={i} value={v.voiceURI || v.name}>
-                      {v.name} ({v.lang}) {v.name.toLowerCase().includes('natural') || v.name.toLowerCase().includes('neural') ? '⭐ Tự nhiên' : ''}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-[11px] text-[#8e837a] italic">
-                  Đang sử dụng bộ đọc tiếng Trung tiêu chuẩn của thiết bị.
-                </p>
-              )}
+              <select
+                value={selectedVoiceURI}
+                onChange={(e) => setSelectedVoiceURI(e.target.value)}
+                className="w-full h-9 bg-[#1f1a17] border border-[#2e2621] focus:border-[#df5343] rounded-xl px-3 text-xs text-[#f5ede4] focus:outline-none cursor-pointer"
+              >
+                <option value="">Tự động chọn giọng chuẩn nhất (Natural / Online)</option>
+                {availableVoices.map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name} ({v.lang})
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[11px] text-[#8e837a]">Tốc độ phát âm:</label>
-                  <span className="text-[11px] font-bold text-[#df5343] bg-[#2b1917] px-2 py-0.5 rounded-md border border-[#4d2522]">
-                    {voiceRate}x {voiceRate <= 0.75 ? '(Rõ & Dễ học)' : voiceRate >= 1.0 ? '(Thực tế)' : ''}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="1.2"
-                  step="0.05"
-                  value={voiceRate}
-                  onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
-                  className="w-full accent-[#df5343] cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-[#8e837a]">
-                  <span>0.5x (Rất chậm)</span>
-                  <span>0.75x (Chuẩn mẫu)</span>
-                  <span>1.0x (Tự nhiên)</span>
-                </div>
+            {/* Voice Rate Slider */}
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-medium text-[#d8cebe]">Tốc độ phát âm:</label>
+                <span className="text-xs font-bold text-[#e5a044]">{voiceRate}x</span>
               </div>
+              <input
+                type="range"
+                min="0.5"
+                max="1.2"
+                step="0.05"
+                value={voiceRate}
+                onChange={(e) => setVoiceRate(parseFloat(e.target.value))}
+                className="w-full accent-[#df5343] cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-[#8e837a]">
+                <span>0.5x (Rất chậm)</span>
+                <span>0.75x (Chuẩn mẫu)</span>
+                <span>1.0x (Tự nhiên)</span>
+              </div>
+            </div>
 
-              <div className="flex items-center justify-between p-3 rounded-xl bg-[#1f1a17] border border-[#2e2621]">
-                <div>
-                  <span className="block text-xs text-[#d8cebe] font-medium">Hiệu ứng âm thanh</span>
-                  <span className="block text-[10px] text-[#8e837a]">Tiếng click, lật thẻ, chúc mừng</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSoundEnabled(!soundEnabled)}
-                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
-                    soundEnabled ? 'bg-[#df5343]' : 'bg-[#382f29]'
-                  }`}
-                >
-                  <span
-                    className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
-                      soundEnabled ? 'left-6' : 'left-1'
-                    }`}
-                  />
-                </button>
+            {/* Sound Effects Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[#1f1a17] border border-[#2e2621]">
+              <div>
+                <span className="block text-xs text-[#d8cebe] font-medium">Hiệu ứng âm thanh</span>
+                <span className="block text-[10px] text-[#8e837a]">Tiếng click, lật thẻ, chúc mừng</span>
               </div>
+              <button
+                type="button"
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
+                  soundEnabled ? 'bg-[#df5343]' : 'bg-[#382f29]'
+                }`}
+              >
+                <span
+                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                    soundEnabled ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </button>
             </div>
           </div>
         </div>
 
-        {/* SECTION 2: DATA BACKUP & RESTORE */}
+        {/* SECTION 3: DATA BACKUP & RESTORE */}
         <div className="p-4 rounded-2xl bg-[#161311] border border-[#2e2621] space-y-3">
           <h3 className="text-xs font-bold text-[#f5ede4] uppercase tracking-wider">
             Sao Lưu & Phục Hồi Dữ Liệu
@@ -420,7 +520,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
           <button
             onClick={handleSave}
-            className="px-6 py-2.5 rounded-xl bg-[#df5343] hover:bg-[#eb5f50] text-white text-xs font-bold shadow-md transition-all active:scale-95"
+            className="px-6 py-2.5 rounded-xl bg-[#df5343] hover:bg-[#eb5f50] text-white text-xs font-bold shadow-md transition-all active:scale-95 cursor-pointer"
           >
             Lưu cài đặt
           </button>

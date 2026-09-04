@@ -5,7 +5,16 @@ class SoundEffectsService {
   private enabled: boolean = true;
 
   constructor() {
-    // AudioContext will be initialized on first user gesture
+    if (typeof window !== 'undefined') {
+      const unlock = () => {
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+      };
+      window.addEventListener('click', unlock, { once: true, passive: true });
+      window.addEventListener('touchstart', unlock, { once: true, passive: true });
+      window.addEventListener('keydown', unlock, { once: true, passive: true });
+    }
   }
 
   private getContext(): AudioContext | null {

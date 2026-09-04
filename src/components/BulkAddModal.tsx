@@ -21,7 +21,7 @@ interface BulkAddModalProps {
 }
 
 export const BulkAddModal: React.FC<BulkAddModalProps> = ({ isOpen, onClose }) => {
-  const { words, addBatchWords } = useApp();
+  const { words, addBatchWords, settings } = useApp();
 
   const [rawText, setRawText] = useState<string>('');
   const [parsedWords, setParsedWords] = useState<Array<Partial<Word>>>([]);
@@ -46,7 +46,11 @@ export const BulkAddModal: React.FC<BulkAddModalProps> = ({ isOpen, onClose }) =
     setError(null);
 
     try {
-      const results = await GeminiService.batchParseWords(rawText);
+      const results = await GeminiService.batchParseWords(
+        rawText,
+        settings.geminiApiKey,
+        settings.geminiModel
+      );
 
       if (results.length === 0) {
         throw new Error('Không trích xuất được từ vựng nào.');

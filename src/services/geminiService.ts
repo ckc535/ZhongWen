@@ -20,15 +20,15 @@ export interface StoryLengthOption {
   customWords?: number;
 }
 
-// Clean and use exact model name specified by user (e.g. gemini-3.6-flash, gemini-3.7-flash, gemini-3.5-flash)
+// Clean and normalize model name
 function normalizeModelName(rawModel?: string): string {
   if (!rawModel || !rawModel.trim()) {
-    return import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
+    return import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
   }
   return rawModel.trim().replace(/^models\//, '');
 }
 
-// Helper to strip Vietnamese accents for fuzzy matching
+// Helper to strip Vietnamese accents for fuzzy offline matching
 function normalizeText(str: string): string {
   return str
     .normalize('NFD')
@@ -39,11 +39,10 @@ function normalizeText(str: string): string {
     .trim();
 }
 
-// Fallback dictionary for common inputs if API key is not yet set
+// Fallback dictionary for common offline words
 const OFFLINE_FALLBACK_DICT: Record<string, Partial<GeminiAutoFillResult>> = {
   'tao': { hanzi: '苹果', pinyin: 'píngguǒ', vietnamese: 'quả táo', hanViet: 'Bình quả', exampleSentence: '我喜欢吃苹果。', examplePinyin: 'Wǒ xǐhuan chī píngguǒ.', exampleVietnamese: 'Tôi thích ăn táo.', radicals: '艹 + 平 + 果', mnemonic: 'Loại quả mọc từ cây cỏ mang lại sự bình an.', hskLevel: 1 },
   'qua tao': { hanzi: '苹果', pinyin: 'píngguǒ', vietnamese: 'quả táo', hanViet: 'Bình quả', exampleSentence: '我喜欢吃苹果。', examplePinyin: 'Wǒ xǐhuan chī píngguǒ.', exampleVietnamese: 'Tôi thích ăn táo.', radicals: '艹 + 平 + 果', mnemonic: 'Loại quả mọc từ cây cỏ mang lại sự bình an.', hskLevel: 1 },
-  'trai tao': { hanzi: '苹果', pinyin: 'píngguǒ', vietnamese: 'quả táo', hanViet: 'Bình quả', exampleSentence: '我喜欢吃苹果。', examplePinyin: 'Wǒ xǐhuan chī píngguǒ.', exampleVietnamese: 'Tôi thích ăn táo.', radicals: '艹 + 平 + 果', mnemonic: 'Loại quả mọc từ cây cỏ mang lại sự bình an.', hskLevel: 1 },
   'pingguo': { hanzi: '苹果', pinyin: 'píngguǒ', vietnamese: 'quả táo', hanViet: 'Bình quả', exampleSentence: '我喜欢吃苹果。', examplePinyin: 'Wǒ xǐhuan chī píngguǒ.', exampleVietnamese: 'Tôi thích ăn táo.', radicals: '艹 + 平 + 果', mnemonic: 'Loại quả mọc từ cây cỏ mang lại sự bình an.', hskLevel: 1 },
   '苹果': { hanzi: '苹果', pinyin: 'píngguǒ', vietnamese: 'quả táo', hanViet: 'Bình quả', exampleSentence: '我喜欢吃苹果。', examplePinyin: 'Wǒ xǐhuan chī píngguǒ.', exampleVietnamese: 'Tôi thích ăn táo.', radicals: '艹 + 平 + 果', mnemonic: 'Loại quả mọc từ cây cỏ mang lại sự bình an.', hskLevel: 1 },
 
@@ -62,31 +61,14 @@ const OFFLINE_FALLBACK_DICT: Record<string, Partial<GeminiAutoFillResult>> = {
 
   'ban be': { hanzi: '朋友', pinyin: 'péngyou', vietnamese: 'bạn bè / bằng hữu', hanViet: 'Bằng hữu', exampleSentence: '他是我的好朋友。', examplePinyin: 'Tā shì wǒ de hǎo péngyou.', exampleVietnamese: 'Cậu ấy là bạn tốt của tôi.', radicals: '月 + 月 + 又', mnemonic: 'Hai vầng trăng soi chiếu cùng đôi bàn tay kề vai sát cánh.', hskLevel: 1 },
   'pengyou': { hanzi: '朋友', pinyin: 'péngyou', vietnamese: 'bạn bè / bằng hữu', hanViet: 'Bằng hữu', exampleSentence: '他是我的好朋友。', examplePinyin: 'Tā shì wǒ de hǎo péngyou.', exampleVietnamese: 'Cậu ấy là bạn tốt của tôi.', radicals: '月 + 月 + 又', mnemonic: 'Hai vầng trăng soi chiếu cùng đôi bàn tay kề vai sát cánh.', hskLevel: 1 },
-  '朋友': { hanzi: '朋友', pinyin: 'péngyou', vietnamese: 'bạn bè / bằng hữu', hanViet: 'Bằng hữu', exampleSentence: '他是我的好朋友。', examplePinyin: 'Tā shì wǒ de hǎo péngyou.', exampleVietnamese: 'Cậu ấy là bạn tốt của tôi.', radicals: '月 + 月 + 又', mnemonic: 'Hai vầng trăng soi chiếu cùng đôi bàn tay kề vai sát cánh.', hskLevel: 1 },
-
-  'tra': { hanzi: '茶', pinyin: 'chá', vietnamese: 'trà / chè', hanViet: 'Trà', exampleSentence: '请喝茶。', examplePinyin: 'Qǐng hē chá.', exampleVietnamese: 'Mời bạn uống trà.', radicals: '艹 + 人 + 木', mnemonic: 'Người (人) đứng giữa ngọn cỏ (艹) và thân cây (木) để hái lá trà.', hskLevel: 1 },
-  'cha': { hanzi: '茶', pinyin: 'chá', vietnamese: 'trà / chè', hanViet: 'Trà', exampleSentence: '请喝茶。', examplePinyin: 'Qǐng hē chá.', exampleVietnamese: 'Mời bạn uống trà.', radicals: '艹 + 人 + 木', mnemonic: 'Người (人) đứng giữa ngọn cỏ (艹) và thân cây (木) để hái lá trà.', hskLevel: 1 },
-  '茶': { hanzi: '茶', pinyin: 'chá', vietnamese: 'trà / chè', hanViet: 'Trà', exampleSentence: '请喝茶。', examplePinyin: 'Qǐng hē chá.', exampleVietnamese: 'Mời bạn uống trà.', radicals: '艹 + 人 + 木', mnemonic: 'Người (人) đứng giữa ngọn cỏ (艹) và thân cây (木) để hái lá trà.', hskLevel: 1 },
-
-  'ca phe': { hanzi: '咖啡', pinyin: 'kāfēi', vietnamese: 'cà phê', hanViet: 'Cà phê', exampleSentence: '我想喝咖啡。', examplePinyin: 'Wǒ xiǎng hē kāfēi.', exampleVietnamese: 'Tôi muốn uống cà phê.', radicals: '口 + 口', mnemonic: 'Mở miệng (口) thưởng thức hương vị cà phê.', hskLevel: 1 },
-  'kafei': { hanzi: '咖啡', pinyin: 'kāfēi', vietnamese: 'cà phê', hanViet: 'Cà phê', exampleSentence: '我想喝咖啡。', examplePinyin: 'Wǒ xiǎng hē kāfēi.', exampleVietnamese: 'Tôi muốn uống cà phê.', radicals: '口 + 口', mnemonic: 'Mở miệng (口) thưởng thức hương vị cà phê.', hskLevel: 1 },
-  '咖啡': { hanzi: '咖啡', pinyin: 'kāfēi', vietnamese: 'cà phê', hanViet: 'Cà phê', exampleSentence: '我想喝咖啡。', examplePinyin: 'Wǒ xiǎng hē kāfēi.', exampleVietnamese: 'Tôi muốn uống cà phê.', radicals: '口 + 口', mnemonic: 'Mở miệng (口) thưởng thức hương vị cà phê.', hskLevel: 1 },
-
-  'sach': { hanzi: '书', pinyin: 'shū', vietnamese: 'sách / thư', hanViet: 'Thư', exampleSentence: '这是一本书。', examplePinyin: 'Zhè shì yì běn shū.', exampleVietnamese: 'Đây là một quyển sách.', radicals: '𠃍 + 丨 + 丶', mnemonic: 'Hình ảnh cuốn sách mở ra với chiếc bút đang viết.', hskLevel: 1 },
-  'shu': { hanzi: '书', pinyin: 'shū', vietnamese: 'sách / thư', hanViet: 'Thư', exampleSentence: '这是一本书。', examplePinyin: 'Zhè shì yì běn shū.', exampleVietnamese: 'Đây là một quyển sách.', radicals: '𠃍 + 丨 + 丶', mnemonic: 'Hình ảnh cuốn sách mở ra với chiếc bút đang viết.', hskLevel: 1 },
-  '书': { hanzi: '书', pinyin: 'shū', vietnamese: 'sách / thư', hanViet: 'Thư', exampleSentence: '这是一本书。', examplePinyin: 'Zhè shì yì běn shū.', exampleVietnamese: 'Đây là một quyển sách.', radicals: '𠃍 + 丨 + 丶', mnemonic: 'Hình ảnh cuốn sách mở ra với chiếc bút đang viết.', hskLevel: 1 }
+  '朋友': { hanzi: '朋友', pinyin: 'péngyou', vietnamese: 'bạn bè / bằng hữu', hanViet: 'Bằng hữu', exampleSentence: '他是我的好朋友。', examplePinyin: 'Tā shì wǒ de hǎo péngyou.', exampleVietnamese: 'Cậu ấy là bạn tốt của tôi.', radicals: '月 + 月 + 又', mnemonic: 'Hai vầng trăng soi chiếu cùng đôi bàn tay kề vai sát cánh.', hskLevel: 1 }
 };
 
 export class GeminiService {
   private static connectionState: AiConnectionState = 'idle';
   private static listeners: Set<(state: AiConnectionState) => void> = new Set();
-  private static activeWs: WebSocket | null = null;
-  private static wsPendingResolve: ((text: string) => void) | null = null;
-  private static wsPendingReject: ((err: Error) => void) | null = null;
-  private static wsOnChunk: ((acc: string, chunk: string) => void) | null = null;
-  private static wsAccumulatedText = '';
 
-  // Multi-API-Key Pool with Automatic Failover / Round-Robin
+  // Multi-API-Key Pool with Automatic Failover
   private static keyPool: string[] = [];
   private static activeKeyIndex: number = 0;
 
@@ -129,9 +111,9 @@ export class GeminiService {
 
   public static getActiveApiKey(fallbackKey?: string): string {
     if (GeminiService.keyPool.length > 0) {
-      return GeminiService.keyPool[GeminiService.activeKeyIndex];
+      return GeminiService.keyPool[GeminiService.activeKeyIndex % GeminiService.keyPool.length];
     }
-    const envKeys = import.meta.env.VITE_GEMINI_API_KEY || fallbackKey || '';
+    const envKeys = fallbackKey || import.meta.env.VITE_GEMINI_API_KEY || '';
     if (envKeys.trim()) {
       GeminiService.setApiKeyPool(envKeys);
       return GeminiService.keyPool[0] || '';
@@ -153,32 +135,24 @@ export class GeminiService {
     };
   }
 
-  // ================= 1. ALWAYS-ON REALTIME PORT & HEALTH CHECK =================
-  public static async initWebSocketSession(rawApiKey?: string, model?: string): Promise<void> {
+  // Pre-warm AI connection state check
+  public static async prewarmConnection(rawApiKey?: string, model?: string): Promise<void> {
     const envKey = rawApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
-    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
+    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
 
     if (envKey) {
       GeminiService.setApiKeyPool(envKey);
     }
 
-    const currentKey = GeminiService.getActiveApiKey(envKey);
-    if (!currentKey) {
-      GeminiService.setConnectionState('idle');
-      return;
-    }
-
     GeminiService.setConnectionState('connecting');
-    const targetModel = normalizeModelName(envModel);
 
-    // 0. Check server-side secure AI health endpoint first (No key exposed in browser)
+    // 1. Check Server AI Proxy first
     try {
-      const serverHealth = await fetch('/api/ai/health');
-      if (serverHealth.ok) {
-        const hData = await serverHealth.json();
-        if (hData.status === 'ready') {
+      const res = await fetch('/api/ai/health');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'ready') {
           GeminiService.setConnectionState('connected');
-          console.log(`🟢 [Gemini Engine] Đã kết nối sẵn sàng tới AI Proxy bảo mật (model: "${targetModel}")`);
           return;
         }
       }
@@ -186,154 +160,25 @@ export class GeminiService {
       // ignore
     }
 
-    // 1. Health-check the active key against Google Gemini API for the exact model in .env (Fallback for purely client-side)
-    const verifyKey = async (key: string): Promise<boolean> => {
-      try {
-        const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}?key=${key}`;
-        const res = await fetch(testUrl, { method: 'GET', keepalive: true });
-        if (res.ok) {
-          return true;
-        }
-        if (res.status === 429 || res.status === 403) {
-          const next = GeminiService.rotateToNextApiKey();
-          if (next) {
-            console.log(`[Gemini Multi-Key] Key #${GeminiService.activeKeyIndex} bị 429/403. Đang thử Key #${next.index}...`);
-            return verifyKey(next.key);
-          }
-        }
-        return false;
-      } catch {
-        return false;
-      }
-    };
-
-    const isHealthy = await verifyKey(currentKey);
-    if (isHealthy) {
-      GeminiService.setConnectionState('connected');
-      console.log(`🟢 [Gemini Engine] Đã kết nối sẵn sàng tới model "${targetModel}"`);
-    } else {
-      GeminiService.setConnectionState('error');
-      console.warn(`🔴 [Gemini Engine] Không thể kết nối tới model "${targetModel}". Vui lòng kiểm tra API Key trong .env`);
+    // 2. Direct key check if server proxy not ready
+    const activeKey = GeminiService.getActiveApiKey(envKey);
+    if (!activeKey) {
+      GeminiService.setConnectionState('idle');
       return;
     }
 
-    // 2. Open WebSocket Session using the exact target model
     try {
-      if (GeminiService.activeWs && GeminiService.activeWs.readyState === WebSocket.OPEN) {
-        return;
+      const targetModel = normalizeModelName(envModel);
+      const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}?key=${activeKey}`;
+      const res = await fetch(testUrl, { method: 'GET' });
+      if (res.ok) {
+        GeminiService.setConnectionState('connected');
+      } else {
+        GeminiService.setConnectionState('error');
       }
-
-      const activeKey = GeminiService.getActiveApiKey();
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${activeKey}`;
-      const ws = new WebSocket(wsUrl);
-
-      ws.onopen = () => {
-        const setupMessage = {
-          setup: {
-            model: `models/${targetModel}`,
-            generationConfig: {
-              responseModalities: ['TEXT']
-            }
-          }
-        };
-        ws.send(JSON.stringify(setupMessage));
-        GeminiService.activeWs = ws;
-        console.log(`⚡ [Gemini WebSocket] Cổng WebSocket Bidi đã mở với model "${targetModel}"`);
-      };
-
-      ws.onmessage = async (event) => {
-        try {
-          let textData = '';
-          if (typeof event.data === 'string') {
-            textData = event.data;
-          } else if (event.data instanceof Blob) {
-            textData = await event.data.text();
-          }
-
-          if (!textData) return;
-          const msg = JSON.parse(textData);
-
-          const textChunk = msg.serverContent?.modelTurn?.parts?.[0]?.text || '';
-          if (textChunk) {
-            GeminiService.wsAccumulatedText += textChunk;
-            if (GeminiService.wsOnChunk) {
-              GeminiService.wsOnChunk(GeminiService.wsAccumulatedText, textChunk);
-            }
-          }
-
-          if (msg.serverContent?.turnComplete) {
-            if (GeminiService.wsPendingResolve) {
-              GeminiService.wsPendingResolve(GeminiService.wsAccumulatedText);
-              GeminiService.wsPendingResolve = null;
-              GeminiService.wsPendingReject = null;
-            }
-          }
-        } catch {
-          // ignore non-json frames
-        }
-      };
-
-      ws.onerror = () => {
-        console.warn(`⚠️ [Gemini WebSocket] WebSocket ngắt, hệ thống sẽ sử dụng luồng HTTP/2 Stream cho model "${targetModel}"`);
-      };
-
-      ws.onclose = () => {
-        GeminiService.activeWs = null;
-      };
     } catch {
-      // ignore
+      GeminiService.setConnectionState('error');
     }
-  }
-
-  // Send request through the established WebSocket port
-  private static async sendThroughWebSocket(
-    prompt: string,
-    modelName: string,
-    onChunk?: (acc: string, chunk: string) => void
-  ): Promise<string> {
-    if (!GeminiService.activeWs || GeminiService.activeWs.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket port is not ready');
-    }
-
-    console.log(`⚡ [WebSocket Stream] Đang gửi yêu cầu trực tiếp tới "${modelName}" qua WebSocket...`);
-
-    return new Promise((resolve, reject) => {
-      GeminiService.wsAccumulatedText = '';
-      GeminiService.wsOnChunk = onChunk || null;
-      GeminiService.wsPendingResolve = resolve;
-      GeminiService.wsPendingReject = reject;
-
-      const clientMsg = {
-        clientContent: {
-          turns: [
-            {
-              role: 'user',
-              parts: [{ text: prompt }]
-            }
-          ],
-          turnComplete: true
-        }
-      };
-
-      GeminiService.activeWs!.send(JSON.stringify(clientMsg));
-
-      setTimeout(() => {
-        if (GeminiService.wsPendingResolve) {
-          if (GeminiService.wsAccumulatedText) {
-            resolve(GeminiService.wsAccumulatedText);
-          } else {
-            reject(new Error('WebSocket request timed out'));
-          }
-          GeminiService.wsPendingResolve = null;
-          GeminiService.wsPendingReject = null;
-        }
-      }, 20000);
-    });
-  }
-
-  // Pre-warm helper called immediately on site load across all pages
-  public static prewarmConnection(rawApiKey?: string, model?: string): void {
-    GeminiService.initWebSocketSession(rawApiKey, model);
   }
 
   // Super-Resilient JSON extractor and auto-repairer
@@ -388,12 +233,15 @@ export class GeminiService {
               chineseText: rawChinese,
               pinyinText: pinyinMatch ? pinyinMatch[1] : '',
               vietnameseTranslation: viMatch ? viMatch[1] : '',
-              sentences: rawChinese.split(/[。！？\n]/).filter(s => s.trim().length > 0).map(s => ({
-                chinese: s.trim() + '。',
-                pinyin: '',
-                vietnamese: '',
-                tokens: []
-              })),
+              sentences: rawChinese
+                .split(/[。！？\n]/)
+                .filter(s => s.trim().length > 0)
+                .map(s => ({
+                  chinese: s.trim() + '。',
+                  pinyin: '',
+                  vietnamese: '',
+                  tokens: []
+                })),
               newWordsDetected: []
             };
           }
@@ -407,26 +255,29 @@ export class GeminiService {
     }
   }
 
-  // Unified High-Speed Stream Engine: WebSocket First with Automatic HTTP Stream Fallback
+  /**
+   * Unified High-Speed Stream Engine:
+   * Priority 1: Backend Secure SSE Proxy (/api/ai/generate-stream) - Zero key exposure in browser!
+   * Priority 2: Direct browser SSE stream with automatic key rotation fallback
+   */
   public static async callAiEngineStream(
-    apiKeyInput: string,
-    model: string,
-    prompt: string,
+    apiKeyInput?: string,
+    model?: string,
+    prompt: string = '',
     isJson: boolean = true,
     onChunk?: (accumulatedText: string, latestChunk: string) => void
   ): Promise<string> {
     const envKey = apiKeyInput || import.meta.env.VITE_GEMINI_API_KEY || '';
-    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
+    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
+    const targetModel = normalizeModelName(envModel);
 
     if (envKey) {
       GeminiService.setApiKeyPool(envKey);
     }
 
-    const targetModel = normalizeModelName(envModel);
-
-    // 0. Try secure Backend AI Proxy first (No API key exposed in browser Network tab)
+    // ================= 1. SECURE SERVER SSE PROXY (PRIORITY 1) =================
     try {
-      const proxyRes = await fetch('/api/ai/generate', {
+      const proxyRes = await fetch('/api/ai/generate-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -437,19 +288,52 @@ export class GeminiService {
         })
       });
 
-      if (proxyRes.ok) {
-        const data = await proxyRes.json();
-        if (data.text) {
-          if (onChunk) {
-            onChunk(data.text, data.text);
+      if (proxyRes.ok && proxyRes.body) {
+        const reader = proxyRes.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let accumulatedText = '';
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ')) {
+              const jsonStr = trimmed.substring(6).trim();
+              if (jsonStr === '[DONE]') continue;
+              try {
+                const data = JSON.parse(jsonStr);
+                const chunk = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                if (chunk) {
+                  accumulatedText += chunk;
+                  onChunk?.(accumulatedText, chunk);
+                }
+              } catch {
+                // Not standard JSON, could be raw text chunk
+                if (jsonStr && !jsonStr.startsWith('{')) {
+                  accumulatedText += jsonStr;
+                  onChunk?.(accumulatedText, jsonStr);
+                }
+              }
+            }
           }
-          return data.text;
+        }
+
+        if (accumulatedText.trim().length > 0) {
+          return accumulatedText;
         }
       }
     } catch {
-      // fallback to direct client call if server proxy is unavailable
+      // Fallback to client-side streaming if server proxy fails
     }
 
+    // ================= 2. DIRECT CLIENT HTTP SSE STREAM (FALLBACK) =================
     const totalKeys = Math.max(1, GeminiService.keyPool.length);
     let attempts = 0;
     let lastError: Error | null = null;
@@ -457,73 +341,35 @@ export class GeminiService {
     while (attempts < totalKeys) {
       const currentKey = GeminiService.getActiveApiKey(envKey);
       if (!currentKey) {
-        throw new Error('Vui lòng nhập Google Gemini API Key trong file .env');
+        throw new Error('Vui lòng nhập Google Gemini API Key trong phần Cài đặt hoặc file .env');
       }
 
       try {
-        // 1. Try WebSocket Port first (Zero Handshake Latency)
-        if (GeminiService.activeWs && GeminiService.activeWs.readyState === WebSocket.OPEN) {
-          try {
-            const wsResult = await GeminiService.sendThroughWebSocket(prompt, targetModel, onChunk);
-            if (wsResult && wsResult.trim().length > 0) {
-              console.log(`✅ [WebSocket] Đã nhận thành công kết quả từ model "${targetModel}" qua WebSocket`);
-              return wsResult;
-            }
-          } catch (wsErr) {
-            console.warn('WebSocket stream fallback to HTTP SSE:', wsErr);
-          }
-        }
-
-        // 2. HTTP SSE Streaming for the exact model in .env
-        console.log(`🌐 [HTTP Stream] Đang gửi yêu cầu stream tới model "${targetModel}"...`);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${currentKey}&alt=sse`;
-
-        const requestBody: {
-          contents: Array<{ parts: Array<{ text: string }> }>;
-          generationConfig?: {
-            temperature: number;
-            responseMimeType?: string;
-          };
-        } = {
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3 }
-        };
-
-        if (isJson) {
-          requestBody.generationConfig!.responseMimeType = 'application/json';
-        }
-
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-          keepalive: true
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              ...(isJson ? { responseMimeType: 'application/json' } : {})
+            }
+          })
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          const errorMsg = errorData.error?.message || response.statusText;
-
-          // 429: Rate Limit / Quota Exceeded ➔ Auto Switch Key!
-          if (response.status === 429 || response.status === 403) {
-            if (GeminiService.keyPool.length > 1) {
-              const rotated = GeminiService.rotateToNextApiKey();
-              if (rotated) {
-                console.warn(`Key #${rotated.index - 1} bị giới hạn (429). Tự động đổi sang Key #${rotated.index}...`);
-                attempts++;
-                // Reconnect socket with new key
-                GeminiService.initWebSocketSession(rotated.key, targetModel);
-                continue;
-              }
-            }
-            throw new Error(`Mô hình "${targetModel}" đã hết lượt dùng hôm nay (429 Quota Exceeded). Bạn hãy chuyển sang "gemini-3.7-flash" hoặc thêm nhiều API Key trong file .env cách nhau bởi dấu phẩy.`);
+          if ((response.status === 429 || response.status === 403) && GeminiService.keyPool.length > 1) {
+            GeminiService.rotateToNextApiKey();
+            attempts++;
+            continue;
           }
-
-          throw new Error(`Lỗi Gemini API (${response.status}): ${errorMsg}`);
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error?.message || `HTTP ${response.status}`);
         }
 
         if (!response.body) {
-          throw new Error('Không thể khởi tạo luồng dữ liệu stream từ Gemini API');
+          throw new Error('Không thể khởi tạo luồng dữ liệu stream');
         }
 
         const reader = response.body.getReader();
@@ -549,12 +395,10 @@ export class GeminiService {
                 const chunk = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
                 if (chunk) {
                   accumulatedText += chunk;
-                  if (onChunk) {
-                    onChunk(accumulatedText, chunk);
-                  }
+                  onChunk?.(accumulatedText, chunk);
                 }
               } catch {
-                // ignore partial SSE lines
+                // ignore
               }
             }
           }
@@ -564,7 +408,6 @@ export class GeminiService {
           throw new Error('Gemini API không trả về nội dung stream');
         }
 
-        console.log(`✅ [HTTP Stream] Đã nhận thành công kết quả từ model "${targetModel}"`);
         return accumulatedText;
       } catch (err: unknown) {
         lastError = err instanceof Error ? err : new Error(String(err));
@@ -580,15 +423,12 @@ export class GeminiService {
     throw lastError || new Error('Không thể kết nối đến Gemini API');
   }
 
-  // 1. Auto Fill 3 fields
+  // 1. Auto Fill Word Details
   public static async autoFillWord(
     input: { hanzi?: string; pinyin?: string; vietnamese?: string },
     apiKey?: string,
     model?: string
   ): Promise<GeminiAutoFillResult> {
-    const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
-    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
-
     const rawInput = input.hanzi || input.pinyin || input.vietnamese || '';
     const norm = normalizeText(rawInput);
 
@@ -608,45 +448,60 @@ export class GeminiService {
       };
     }
 
-    const prompt = `Bạn là chuyên gia ngôn ngữ tiếng Trung và giảng dạy HSK hàng đầu.
-Nhiệm vụ: Điền và phân tích chi tiết từ vựng tiếng Trung dựa trên dữ liệu đầu vào:
-Input: "${rawInput}"
+    const prompt = `Bạn là chuyên gia giảng dạy HSK hàng đầu. Hãy phân tích và điền đầy đủ thông tin từ vựng tiếng Trung dựa trên thông tin người dùng cung cấp:
+- Chữ Hán: "${input.hanzi || ''}"
+- Pinyin: "${input.pinyin || ''}"
+- Nghĩa Việt: "${input.vietnamese || ''}"
 
 Yêu cầu BẮT BUỘC:
-- "radicals": Liệt kê rõ các bộ thủ cấu thành chữ kèm tên bộ thủ tiếng Việt (ví dụ: "亻 (nhân đứng) + 尔 (nhĩ)" hoặc "氵 (thủy) + 口 (khẩu)").
-- "mnemonic": Viết mẹo nhớ cách nhìn / chiết tự hình tượng sinh động, dễ thuộc lòng ngay lập tức (ví dụ: "Người (亻) đối diện với mình (尔) chính là Bạn (你)." hoặc "Dùng miệng (口) uống nước (氵) thanh mát.").
-- "hanViet": Âm Hán Việt chuẩn xác.
-- "exampleSentence": 1 câu ví dụ giao tiếp tự nhiên ngắn gọn chứa từ này.
-- "examplePinyin": Pinyin có dấu thanh của câu ví dụ.
-- "exampleVietnamese": Dịch nghĩa câu ví dụ sang tiếng Việt.
+- "hanzi": Bắt buộc là Chữ Hán Giản Thể.
+- "pinyin": Pinyin có dấu thanh điệu chuẩn xác.
+- "vietnamese": Dịch nghĩa chuẩn xác và thông dụng nhất.
+- "hanViet": Âm Hán Việt (ví dụ: "Nhĩ Hảo", "Tạ Tạ", "Táo").
+- "radicals": Liệt kê các bộ thủ cấu thành kèm giải nghĩa (ví dụ: "亻 (nhân) + 尔 (nhĩ)").
+- "mnemonic": Mẹo nhớ mặt chữ / chiết tự hình tượng sinh động, dễ thuộc lòng trong 5 giây.
+- "exampleSentence": 1 câu ví dụ thực tế ngắn gọn (hoàn toàn bằng Chữ Hán).
+- "examplePinyin": Pinyin câu ví dụ có dấu thanh.
+- "exampleVietnamese": Dịch nghĩa câu ví dụ.
+- "hskLevel": Cấp độ HSK (từ 1 đến 6).
 
-Trả về duy nhất chuỗi JSON chuẩn:
+Trả về DUY NHẤT một chuỗi JSON hợp lệ theo đúng schema sau (không thêm văn bản ngoài JSON):
 {
-  "hanzi": "Chữ Hán giản thể chuẩn",
-  "pinyin": "Pinyin có dấu thanh điệu",
-  "vietnamese": "Nghĩa tiếng Việt ngắn gọn",
-  "hanViet": "Âm Hán Việt",
-  "exampleSentence": "Câu ví dụ ngắn",
-  "examplePinyin": "Pinyin câu ví dụ",
-  "exampleVietnamese": "Dịch câu ví dụ",
-  "radicals": "Bộ thủ chi tiết",
-  "mnemonic": "Mẹo nhớ mặt chữ & chiết tự dễ thuộc",
+  "hanzi": "chữ Hán",
+  "pinyin": "pinyin",
+  "vietnamese": "nghĩa tiếng Việt",
+  "hanViet": "âm Hán Việt",
+  "radicals": "bộ thủ cấu thành",
+  "mnemonic": "mẹo nhớ mặt chữ",
+  "exampleSentence": "câu ví dụ tiếng Trung",
+  "examplePinyin": "pinyin câu ví dụ",
+  "exampleVietnamese": "dịch ví dụ tiếng Việt",
   "hskLevel": 1
 }`;
 
-    const raw = await GeminiService.callAiEngineStream(envKey, envModel, prompt, true);
-    return GeminiService.safeExtractAndParseJson(raw);
+    const raw = await GeminiService.callAiEngineStream(apiKey, model, prompt, true);
+    const parsed = GeminiService.safeExtractAndParseJson(raw);
+
+    return {
+      hanzi: parsed.hanzi || input.hanzi || '',
+      pinyin: parsed.pinyin || input.pinyin || '',
+      vietnamese: parsed.vietnamese || input.vietnamese || '',
+      hanViet: parsed.hanViet || '',
+      exampleSentence: parsed.exampleSentence || '',
+      examplePinyin: parsed.examplePinyin || '',
+      exampleVietnamese: parsed.exampleVietnamese || '',
+      radicals: parsed.radicals || '',
+      mnemonic: parsed.mnemonic || '',
+      hskLevel: parsed.hskLevel || 1
+    };
   }
 
-  // 2. Batch parse words
+  // 2. Batch parse words from raw text
   public static async batchParseWords(
     rawText: string,
     apiKey?: string,
     model?: string
   ): Promise<Partial<Word>[]> {
-    const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
-    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
-
     const prompt = `Bạn là chuyên gia giảng dạy HSK. Trích xuất và phân tích đầy đủ từ vựng tiếng Trung từ văn bản sau:
 """
 ${rawText}
@@ -674,13 +529,15 @@ Trả về mảng JSON chuẩn:
   }
 ]`;
 
-    const raw = await GeminiService.callAiEngineStream(envKey, envModel, prompt, true);
+    const raw = await GeminiService.callAiEngineStream(apiKey, model, prompt, true);
     const parsed = GeminiService.safeExtractAndParseJson(raw);
     if (!Array.isArray(parsed)) {
       throw new Error('Dữ liệu trả về từ AI không đúng định dạng mảng.');
     }
+
+    const now = Date.now();
     return parsed.map((item, index) => ({
-      id: `bulk-${Date.now()}-${index}`,
+      id: `bulk-${now}-${index}`,
       hanzi: item.hanzi || '',
       pinyin: item.pinyin || '',
       vietnamese: item.vietnamese || '',
@@ -696,7 +553,7 @@ Trả về mảng JSON chuẩn:
       reviewCount: 0,
       correctCount: 0,
       wrongCount: 0,
-      createdAt: Date.now()
+      createdAt: now + index
     }));
   }
 
@@ -711,9 +568,6 @@ Trả về mảng JSON chuẩn:
     model?: string,
     onStreamChunk?: (accumulatedText: string, latestChunk: string) => void
   ): Promise<StoryPassage> {
-    const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
-    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
-
     const priorityWords = userWords
       .filter(w => w.isStarred || w.box <= 2 || !w.lastReviewed)
       .map(w => w.hanzi)
@@ -780,12 +634,12 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
   "newWordsDetected": [
     {
       "hanzi": "Chữ Hán từ mới",
-      "pinyin": "Pinyin có dấu",
-      "vietnamese": "Nghĩa tiếng Việt ngắn",
+      "pinyin": "Pinyin có dấu thanh",
+      "vietnamese": "Dịch nghĩa tiếng Việt",
       "hanViet": "Âm Hán Việt",
       "radicals": "Bộ thủ cấu thành",
-      "mnemonic": "Mẹo nhớ mặt chữ ngắn gọn sinh động",
-      "exampleSentence": "Câu ví dụ ngắn chứa từ này",
+      "mnemonic": "Mẹo nhớ mặt chữ sinh động",
+      "exampleSentence": "Câu ví dụ chứa từ mới",
       "examplePinyin": "Pinyin câu ví dụ",
       "exampleVietnamese": "Dịch câu ví dụ"
     }
@@ -793,8 +647,8 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
 }`;
 
     const raw = await GeminiService.callAiEngineStream(
-      envKey,
-      envModel,
+      apiKey,
+      model,
       prompt,
       true,
       onStreamChunk
@@ -816,32 +670,12 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
       chineseText: parsed.chineseText || '',
       pinyinText: parsed.pinyinText || '',
       vietnameseTranslation: parsed.vietnameseTranslation || '',
-      format: format,
+      format: parsed.format || format,
       sentences: parsed.sentences || [],
       newWordsDetected: processedNewWords,
       topic,
       createdAt: Date.now()
     };
-  }
-
-  // Backward compatible wrapper
-  public static async generateContextStory(
-    userWords: Word[],
-    topic: string = 'Chào hỏi và làm quen',
-    level: string = 'Sơ cấp HSK 1-2',
-    format: 'dialogue' | 'article' = 'dialogue',
-    apiKey?: string,
-    model?: string
-  ): Promise<StoryPassage> {
-    return GeminiService.generateContextStoryStream(
-      userWords,
-      topic,
-      level,
-      format,
-      { type: 'medium' },
-      apiKey,
-      model
-    );
   }
 
   // 4. Custom Passage Analyzer (Interactive Tokens, Pinyin, Meaning & New Words Extraction)
@@ -852,9 +686,6 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
     model?: string,
     onStreamChunk?: (accumulatedText: string, latestChunk: string) => void
   ): Promise<StoryPassage> {
-    const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
-    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
-
     const allVocabularyList = userWords
       .map(w => w.hanzi)
       .slice(0, 150)
@@ -917,8 +748,8 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
 }`;
 
     const raw = await GeminiService.callAiEngineStream(
-      envKey,
-      envModel,
+      apiKey,
+      model,
       prompt,
       true,
       onStreamChunk
@@ -951,9 +782,7 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
   // 5. Test API Key
   public static async testGeminiApiKey(apiKey?: string, model?: string): Promise<boolean> {
     try {
-      const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
-      const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
-      const res = await GeminiService.callAiEngineStream(envKey, envModel, '{"status": "OK"}', true);
+      const res = await GeminiService.callAiEngineStream(apiKey, model, '{"status": "OK"}', true);
       return res.includes('OK');
     } catch (err) {
       console.error('Test API Key error:', err);

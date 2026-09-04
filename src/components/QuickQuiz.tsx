@@ -81,8 +81,6 @@ export const QuickQuiz: React.FC = () => {
       let correctAnswer = '';
       let audioText: string | undefined = undefined;
 
-      const distractorsPool = allWords.filter(w => w.id !== targetWord.id).sort(() => Math.random() - 0.5);
-
       if (qType === 'hanzi-to-vi') {
         question = targetWord.hanzi;
         correctAnswer = targetWord.vietnamese;
@@ -100,11 +98,29 @@ export const QuickQuiz: React.FC = () => {
         audioText = targetWord.hanzi;
       }
 
-      const wrongOpts = distractorsPool.slice(0, 3).map(w => {
-        if (qType === 'hanzi-to-vi') return w.vietnamese;
-        if (qType === 'vi-to-hanzi' || qType === 'audio-to-hanzi') return w.hanzi;
-        return w.pinyin;
-      });
+      // Đảm bảo 4 đáp án luôn khác biệt hoàn toàn (không bị trùng đáp án gây bối rối)
+      const seenAnswers = new Set<string>([correctAnswer.trim()]);
+      const wrongOpts: string[] = [];
+
+      // Lấy ngẫu nhiên các từ làm đáp án nhiễu
+      const candidateDistractors = allWords.filter(w => w.id !== targetWord.id);
+      for (let i = candidateDistractors.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [candidateDistractors[i], candidateDistractors[j]] = [candidateDistractors[j], candidateDistractors[i]];
+      }
+
+      for (const w of candidateDistractors) {
+        let optVal = '';
+        if (qType === 'hanzi-to-vi') optVal = w.vietnamese?.trim();
+        else if (qType === 'vi-to-hanzi' || qType === 'audio-to-hanzi') optVal = w.hanzi?.trim();
+        else optVal = w.pinyin?.trim();
+
+        if (optVal && !seenAnswers.has(optVal)) {
+          seenAnswers.add(optVal);
+          wrongOpts.push(optVal);
+          if (wrongOpts.length >= 3) break;
+        }
+      }
 
       const options = [correctAnswer, ...wrongOpts];
       for (let i = options.length - 1; i > 0; i--) {
