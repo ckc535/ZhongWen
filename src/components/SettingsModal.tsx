@@ -17,8 +17,6 @@ import {
   Flame,
   Play,
   Sparkles,
-  Eye,
-  EyeOff,
   Loader2
 } from 'lucide-react';
 
@@ -52,10 +50,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(settings.soundEffects);
 
-  // Gemini AI Settings State
-  const [geminiApiKey, setGeminiApiKey] = useState<string>(settings.geminiApiKey || '');
+  // Gemini AI Settings State (Chỉ chọn Model & Kiểm tra kết nối, API Key do hệ thống/server quản lý)
   const [geminiModel, setGeminiModel] = useState<string>(settings.geminiModel || 'gemini-3.5-flash-lite');
-  const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [testAiStatus, setTestAiStatus] = useState<{ testing: boolean; success?: boolean; message?: string } | null>(null);
 
   // Rename current user state
@@ -89,12 +85,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleTestAi = async () => {
     setTestAiStatus({ testing: true });
     try {
-      const ok = await GeminiService.testGeminiApiKey(geminiApiKey, geminiModel);
+      const ok = await GeminiService.testGeminiApiKey(undefined, geminiModel);
       if (ok) {
         setTestAiStatus({ testing: false, success: true, message: `Kết nối thành công tới mô hình "${geminiModel}"!` });
         soundEffects.playSuccess();
       } else {
-        setTestAiStatus({ testing: false, success: false, message: 'Không thể kết nối. Vui lòng kiểm tra API Key hoặc hạn mức quota.' });
+        setTestAiStatus({ testing: false, success: false, message: 'Không thể kết nối. Vui lòng kiểm tra API Key hệ thống hoặc quota.' });
         soundEffects.playWrong();
       }
     } catch (err: any) {
@@ -111,7 +107,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       voiceRate,
       voiceURI: selectedVoiceURI,
       soundEffects: soundEnabled,
-      geminiApiKey: geminiApiKey.trim(),
       geminiModel: geminiModel.trim()
     });
     soundEffects.playSuccess();
