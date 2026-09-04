@@ -526,7 +526,7 @@ router.post('/reset-hsk1', async (req, res) => {
   }
 });
 
-// ==================== 16. SERVER-SIDE AI PROXY (MULTI-KEY & SECURE STREAMING) ====================
+// ==================== 16. SERVER-SIDE AI PROXY (FAST GENERATE & ROTATION) ====================
 
 // AI Proxy Health Check
 router.get('/ai/health', async (_req, res) => {
@@ -539,122 +539,31 @@ router.get('/ai/health', async (_req, res) => {
   });
 });
 
-// Realtime Server-Sent Events (SSE) AI Streaming Proxy
-router.post('/ai/generate-stream', async (req, res) => {
-  const { prompt, model, isJson, apiKey: clientApiKey } = req.body;
-  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-    return res.status(400).json({ error: 'Prompt không được để trống' });
-  }
-
-  const pool = clientApiKey ? [clientApiKey.trim()] : getServerKeyPool();
-  if (pool.length === 0) {
-    return res.status(400).json({ error: 'Chưa cấu hình Google Gemini API Key trên server hoặc cài đặt.' });
-  }
-
-  const targetModel = (model || process.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite').replace(/^models\//, '');
-
-  // Setup Server-Sent Events Headers
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform, no-store');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders?.();
-
-  const controller = new AbortController();
-  req.on('close', () => controller.abort());
-
-  let success = false;
-  let attempts = 0;
-  const maxAttempts = pool.length;
-
-  while (attempts < maxAttempts && !success) {
-    const currentKey = pool[serverActiveKeyIndex % pool.length];
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${currentKey}&alt=sse`;
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            ...(isJson ? { responseMimeType: 'application/json' } : {})
-          }
-        }),
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        if ((response.status === 429 || response.status === 403) && pool.length > 1) {
-          console.warn(`[AI Stream Proxy] Key #${(serverActiveKeyIndex % pool.length) + 1} quá tải (${response.status}). Chuyển sang key tiếp theo...`);
-          serverActiveKeyIndex++;
-          attempts++;
-          continue;
-        }
-
-        const errText = await response.text();
-        res.write(`event: error\ndata: ${JSON.stringify({ error: `Gemini API Error: ${errText}` })}\n\n`);
-        return res.end();
-      }
-
-      if (!response.body) {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: 'Không nhận được dữ liệu stream' })}\n\n`);
-        return res.end();
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        res.write(chunk);
-        if (typeof res.flush === 'function') {
-          res.flush();
-        }
-      }
-
-      res.write('\nevent: done\ndata: [DONE]\n\n');
-      res.end();
-      success = true;
-      return;
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        return;
-      }
-      serverActiveKeyIndex++;
-      attempts++;
-      if (attempts >= maxAttempts) {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
-        return res.end();
-      }
-    }
-  }
-});
-
-// Non-streaming AI Proxy with Multi-Key Rotation and Auto-Timeout
+// High-Speed Direct AI Generation Proxy (Multi-Key Rotation & Auto-Timeout)
 router.post('/ai/generate', async (req, res) => {
   try {
     const { prompt, model, isJson, apiKey: clientApiKey } = req.body;
-    const pool = clientApiKey ? [clientApiKey.trim()] : getServerKeyPool();
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+      return res.status(400).json({ error: 'Prompt không được để trống' });
+    }
 
+    const pool = clientApiKey ? [clientApiKey.trim()] : getServerKeyPool();
     if (pool.length === 0) {
       return res.status(400).json({ error: 'Chưa cấu hình Google Gemini API Key trên server hoặc cài đặt.' });
     }
 
-    const targetModel = (model || process.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite').replace(/^models\//, '');
-    let attempts = 0;
-    const maxAttempts = pool.length;
-    let lastError = null;
+    // Exact model specified in env or request
+    const targetModel = (model || process.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite').replace(/^models\//, '').trim();
 
-    while (attempts < maxAttempts) {
+    let lastError = null;
+    const maxAttempts = pool.length;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const currentKey = pool[serverActiveKeyIndex % pool.length];
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${currentKey}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 35000);
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
 
         const response = await fetch(url, {
           method: 'POST',
@@ -671,23 +580,22 @@ router.post('/ai/generate', async (req, res) => {
         clearTimeout(timeoutId);
 
         if (!response.ok) {
+          const errText = await response.text();
+          lastError = new Error(`HTTP ${response.status}: ${errText}`);
           if ((response.status === 429 || response.status === 403) && pool.length > 1) {
             console.warn(`[AI Proxy] Key #${(serverActiveKeyIndex % pool.length) + 1} gặp lỗi ${response.status}. Thử key tiếp theo...`);
             serverActiveKeyIndex++;
-            attempts++;
             continue;
           }
-          const errText = await response.text();
           return res.status(response.status).json({ error: 'Gemini API Error', details: errText });
         }
 
         const data = await response.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        return res.json({ success: true, text });
+        return res.json({ success: true, text, model: targetModel });
       } catch (err) {
         lastError = err;
         serverActiveKeyIndex++;
-        attempts++;
       }
     }
 
@@ -698,6 +606,117 @@ router.post('/ai/generate', async (req, res) => {
   } catch (err) {
     console.error('[AI Proxy Error]:', err);
     res.status(500).json({ error: 'Lỗi khi gọi AI Proxy từ server', details: err.message });
+  }
+});
+
+// Realtime Server-Sent Events (SSE) AI Streaming Proxy (Zero-Hang, Instant Chunk Delivery)
+router.post('/ai/generate-stream', async (req, res) => {
+  const { prompt, model, isJson, apiKey: clientApiKey } = req.body;
+  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+    return res.status(400).json({ error: 'Prompt không được để trống' });
+  }
+
+  const pool = clientApiKey ? [clientApiKey.trim()] : getServerKeyPool();
+  if (pool.length === 0) {
+    return res.status(400).json({ error: 'Chưa cấu hình Google Gemini API Key trên server hoặc cài đặt.' });
+  }
+
+  const baseModel = (model || process.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite').replace(/^models\//, '').trim();
+  const modelsToTry = [baseModel, 'gemini-2.0-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  const uniqueModels = [...new Set(modelsToTry)];
+
+  const clientController = new AbortController();
+  req.on('close', () => clientController.abort());
+
+  let streamStarted = false;
+  let lastError = null;
+
+  for (let attempt = 0; attempt < pool.length; attempt++) {
+    const currentKey = pool[serverActiveKeyIndex % pool.length];
+
+    for (const targetModel of uniqueModels) {
+      if (clientController.signal.aborted) return;
+
+      try {
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => timeoutController.abort(), 20000);
+        const combinedSignal = AbortSignal.any
+          ? AbortSignal.any([clientController.signal, timeoutController.signal])
+          : timeoutController.signal;
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${currentKey}&alt=sse`;
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              ...(isJson ? { responseMimeType: 'application/json' } : {})
+            }
+          }),
+          signal: combinedSignal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            continue; // try next model
+          }
+          if (response.status === 429 || response.status === 403) {
+            break; // rotate key
+          }
+          continue;
+        }
+
+        if (!response.body) {
+          continue;
+        }
+
+        // Successfully connected to Google Gemini API! Send SSE headers
+        streamStarted = true;
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform, no-store',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no'
+        });
+        res.socket?.setNoDelay(true);
+        if (typeof res.flushHeaders === 'function') {
+          res.flushHeaders();
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          res.write(chunk);
+          if (typeof res.flush === 'function') {
+            res.flush();
+          }
+        }
+
+        res.write('\ndata: [DONE]\n\n');
+        return res.end();
+      } catch (err) {
+        if (clientController.signal.aborted) return;
+        lastError = err;
+      }
+    }
+
+    serverActiveKeyIndex++;
+  }
+
+  if (!streamStarted) {
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Không thể kết nối đến Gemini API', details: lastError?.message });
+    } else {
+      res.end();
+    }
   }
 });
 

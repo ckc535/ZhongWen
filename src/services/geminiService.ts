@@ -20,12 +20,10 @@ export interface StoryLengthOption {
   customWords?: number;
 }
 
-// Clean and normalize model name
+// Clean and normalize model name using exact model from env/settings
 function normalizeModelName(rawModel?: string): string {
-  if (!rawModel || !rawModel.trim()) {
-    return import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
-  }
-  return rawModel.trim().replace(/^models\//, '');
+  const m = rawModel || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
+  return m.trim().replace(/^models\//, '');
 }
 
 // Helper to strip Vietnamese accents for fuzzy offline matching
@@ -256,9 +254,10 @@ export class GeminiService {
   }
 
   /**
-   * Unified High-Speed Stream Engine:
-   * Priority 1: Backend Secure SSE Proxy (/api/ai/generate-stream) - Zero key exposure in browser!
-   * Priority 2: Direct browser SSE stream with automatic key rotation fallback
+   * High-Speed Realtime HTTP SSE Stream Engine:
+   * Priority 1: Direct Browser HTTP SSE Stream (Zero intermediary latency, live chunk delivery)
+   * Priority 2: Server SSE Stream Proxy (/api/ai/generate-stream)
+   * Priority 3: Non-stream Fast Generation Fallback (/api/ai/generate)
    */
   public static async callAiEngineStream(
     apiKeyInput?: string,
@@ -269,23 +268,120 @@ export class GeminiService {
   ): Promise<string> {
     const envKey = apiKeyInput || import.meta.env.VITE_GEMINI_API_KEY || '';
     const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
-    const targetModel = normalizeModelName(envModel);
+    const baseModel = normalizeModelName(envModel);
+    const modelsToTry = [...new Set([baseModel, 'gemini-2.0-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'])];
 
     if (envKey) {
       GeminiService.setApiKeyPool(envKey);
     }
 
-    // ================= 1. SECURE SERVER SSE PROXY (PRIORITY 1) =================
+    // ================= 1. DIRECT CLIENT HTTP SSE STREAM (PRIORITY 1 - MAXIMUM SPEED) =================
+    const totalKeys = Math.max(1, GeminiService.keyPool.length);
+    let lastError: Error | null = null;
+
+    for (let k = 0; k < totalKeys; k++) {
+      const currentKey = GeminiService.getActiveApiKey(envKey);
+      if (!currentKey) break;
+
+      for (const targetModel of modelsToTry) {
+        try {
+          const controller = new AbortController();
+          const timeoutTimer = setTimeout(() => controller.abort(), 20000);
+
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${currentKey}&alt=sse`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 0.2,
+                ...(isJson ? { responseMimeType: 'application/json' } : {})
+              }
+            }),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutTimer);
+
+          if (!response.ok) {
+            if (response.status === 404) {
+              continue; // try next candidate model
+            }
+            if ((response.status === 429 || response.status === 403) && GeminiService.keyPool.length > 1) {
+              GeminiService.rotateToNextApiKey();
+              break; // rotate key
+            }
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error?.message || `HTTP ${response.status}`);
+          }
+
+          if (!response.body) {
+            throw new Error('Không thể khởi tạo luồng dữ liệu stream');
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let accumulatedText = '';
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('data: ')) {
+                const jsonStr = trimmed.substring(6).trim();
+                if (jsonStr === '[DONE]') continue;
+                try {
+                  const data = JSON.parse(jsonStr);
+                  const chunk = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                  if (chunk) {
+                    accumulatedText += chunk;
+                    onChunk?.(accumulatedText, chunk);
+                  }
+                } catch {
+                  if (jsonStr && !jsonStr.startsWith('{')) {
+                    accumulatedText += jsonStr;
+                    onChunk?.(accumulatedText, jsonStr);
+                  }
+                }
+              }
+            }
+          }
+
+          if (accumulatedText.trim().length > 0) {
+            return accumulatedText;
+          }
+        } catch (err: unknown) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+        }
+      }
+
+      if (GeminiService.keyPool.length > 1) {
+        GeminiService.rotateToNextApiKey();
+      }
+    }
+
+    // ================= 2. SECURE SERVER SSE PROXY (PRIORITY 2 FALLBACK) =================
     try {
+      const controller = new AbortController();
+      const timeoutTimer = setTimeout(() => controller.abort(), 35000);
+
       const proxyRes = await fetch('/api/ai/generate-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
-          model: targetModel,
+          model: baseModel,
           isJson,
           apiKey: apiKeyInput || undefined
-        })
+        }),
+        signal: controller.signal
       });
 
       if (proxyRes.ok && proxyRes.body) {
@@ -315,7 +411,6 @@ export class GeminiService {
                   onChunk?.(accumulatedText, chunk);
                 }
               } catch {
-                // Not standard JSON, could be raw text chunk
                 if (jsonStr && !jsonStr.startsWith('{')) {
                   accumulatedText += jsonStr;
                   onChunk?.(accumulatedText, jsonStr);
@@ -325,102 +420,41 @@ export class GeminiService {
           }
         }
 
+        clearTimeout(timeoutTimer);
         if (accumulatedText.trim().length > 0) {
           return accumulatedText;
         }
+      } else {
+        clearTimeout(timeoutTimer);
+      }
+    } catch (proxyErr) {
+      console.warn('[GeminiService] Server proxy stream failed:', proxyErr);
+    }
+
+    // ================= 3. ULTRA-FAST SERVER GENERATION (PRIORITY 3 FALLBACK) =================
+    try {
+      const fallbackRes = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          model: baseModel,
+          isJson,
+          apiKey: apiKeyInput || undefined
+        })
+      });
+      if (fallbackRes.ok) {
+        const data = await fallbackRes.json();
+        if (data && data.success && data.text) {
+          onChunk?.(data.text, data.text);
+          return data.text;
+        }
       }
     } catch {
-      // Fallback to client-side streaming if server proxy fails
+      // ignore
     }
 
-    // ================= 2. DIRECT CLIENT HTTP SSE STREAM (FALLBACK) =================
-    const totalKeys = Math.max(1, GeminiService.keyPool.length);
-    let attempts = 0;
-    let lastError: Error | null = null;
-
-    while (attempts < totalKeys) {
-      const currentKey = GeminiService.getActiveApiKey(envKey);
-      if (!currentKey) {
-        throw new Error('Vui lòng nhập Google Gemini API Key trong phần Cài đặt hoặc file .env');
-      }
-
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?key=${currentKey}&alt=sse`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.2,
-              ...(isJson ? { responseMimeType: 'application/json' } : {})
-            }
-          })
-        });
-
-        if (!response.ok) {
-          if ((response.status === 429 || response.status === 403) && GeminiService.keyPool.length > 1) {
-            GeminiService.rotateToNextApiKey();
-            attempts++;
-            continue;
-          }
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.error?.message || `HTTP ${response.status}`);
-        }
-
-        if (!response.body) {
-          throw new Error('Không thể khởi tạo luồng dữ liệu stream');
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let accumulatedText = '';
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('data: ')) {
-              const jsonStr = trimmed.substring(6).trim();
-              if (jsonStr === '[DONE]') continue;
-              try {
-                const data = JSON.parse(jsonStr);
-                const chunk = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                if (chunk) {
-                  accumulatedText += chunk;
-                  onChunk?.(accumulatedText, chunk);
-                }
-              } catch {
-                // ignore
-              }
-            }
-          }
-        }
-
-        if (!accumulatedText) {
-          throw new Error('Gemini API không trả về nội dung stream');
-        }
-
-        return accumulatedText;
-      } catch (err: unknown) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        if (GeminiService.keyPool.length > 1 && attempts < totalKeys - 1) {
-          GeminiService.rotateToNextApiKey();
-          attempts++;
-          continue;
-        }
-        break;
-      }
-    }
-
-    throw lastError || new Error('Không thể kết nối đến Gemini API');
+    throw lastError || new Error('Không thể kết nối đến Gemini API. Vui lòng kiểm tra lại API Key trong .env');
   }
 
   // 1. Auto Fill Word Details
@@ -613,10 +647,10 @@ ${priorityWords ? `- Ưu tiên lồng ghép các từ học viên đang cần ô
 
 Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sau (không thêm bất kỳ văn bản nào ngoài JSON):
 {
+  "chineseText": "Toàn bộ bài viết bằng 100% Chữ Hán",
   "title": "Tiêu đề tiếng Trung (Chữ Hán)",
   "titlePinyin": "Pinyin tiêu đề",
   "titleVietnamese": "Dịch tiêu đề",
-  "chineseText": "Toàn bộ bài viết bằng 100% Chữ Hán",
   "pinyinText": "Pinyin toàn bài",
   "vietnameseTranslation": "Dịch toàn bài sang tiếng Việt",
   "format": "${format}",
@@ -714,10 +748,10 @@ DANH SÁCH TỪ VỰNG HỌC VIÊN ĐÃ HỌC:
 
 Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sau (không thêm bất kỳ văn bản nào ngoài JSON):
 {
+  "chineseText": "Toàn bộ đoạn văn gốc bằng 100% Chữ Hán",
   "title": "Tiêu đề phù hợp bằng Chữ Hán",
   "titlePinyin": "Pinyin tiêu đề",
   "titleVietnamese": "Dịch tiêu đề tiếng Việt",
-  "chineseText": "Toàn bộ đoạn văn gốc bằng 100% Chữ Hán",
   "pinyinText": "Pinyin toàn bài",
   "vietnameseTranslation": "Dịch toàn bộ bài sang tiếng Việt",
   "format": "article",
@@ -779,7 +813,7 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
     };
   }
 
-  // 5. Test API Connection (Fast with auto-timeout - Never hangs)
+  // 5. Test API Connection (Fast with exact env model)
   public static async testGeminiApiKey(apiKey?: string, model?: string): Promise<boolean> {
     const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
     const targetModel = normalizeModelName(envModel);
@@ -820,7 +854,7 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
       if (!activeKey) return false;
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 7000);
+      const timer = setTimeout(() => controller.abort(), 5000);
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}?key=${activeKey}`;
       const res = await fetch(url, { signal: controller.signal });

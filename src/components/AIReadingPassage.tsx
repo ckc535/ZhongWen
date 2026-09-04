@@ -45,25 +45,35 @@ const CACHED_STORY_KEY = 'zhongwen_active_story';
 function extractReadableChinesePreview(raw: string): string {
   if (!raw) return '';
 
-  // 1. Check for complete or partial chineseText field
-  const chineseMatch = raw.match(/"chineseText"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
-  if (chineseMatch && chineseMatch[1]) {
+  // 1. Check for complete or partial chineseText field (streaming in progress)
+  const chineseMatch = raw.match(/"chineseText"\s*:\s*"((?:[^"\\]|\\.)*)/s);
+  if (chineseMatch && chineseMatch[1] && chineseMatch[1].trim().length > 0) {
     return chineseMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
   }
 
-  // 2. Check for title
-  const titleMatch = raw.match(/"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)/);
+  // 2. Check for sentences forming in sentences array
+  const sentenceMatches = Array.from(raw.matchAll(/"chinese"\s*:\s*"((?:[^"\\]|\\.)*)/gs));
+  if (sentenceMatches.length > 0) {
+    const combined = sentenceMatches
+      .map(m => m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'))
+      .filter(s => s.trim().length > 0)
+      .join('\n');
+    if (combined.trim().length > 0) return combined;
+  }
+
+  // 3. Check for title
+  const titleMatch = raw.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)/s);
   if (titleMatch && titleMatch[1]) {
     return `Tiêu đề: ${titleMatch[1].replace(/\\n/g, ' ')}\n...`;
   }
 
-  // 3. Fallback: extract Chinese characters and punctuation
+  // 4. Fallback: extract Chinese characters and punctuation
   const hanziMatches = raw.match(/[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]+/g);
   if (hanziMatches && hanziMatches.length > 0) {
     return hanziMatches.join(' ');
   }
 
-  return 'Đang khởi tạo các câu văn...';
+  return 'Đang khởi tạo câu chữ theo thời gian thực...';
 }
 
 export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStrokeWriter }) => {
@@ -87,6 +97,11 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
   const [streamProgressText, setStreamProgressText] = useState<string>('');
   const [streamStage, setStreamStage] = useState<string>('Đang khởi tạo...');
   const [error, setError] = useState<string | null>(null);
+
+  // Computed real-time preview of Chinese text as tokens arrive
+  const previewChinese = React.useMemo(() => {
+    return extractReadableChinesePreview(streamProgressText);
+  }, [streamProgressText]);
 
   // Story Passage - Stored in state + cached
   const [story, setStory] = useState<StoryPassage | null>(() => {
@@ -127,7 +142,7 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
 
     setIsStreaming(true);
     setStreamProgressText('');
-    setStreamStage('⚡ Đang gửi yêu cầu qua cổng AI đã mở sẵn...');
+    setStreamStage(`⚡ Đang kết nối AI (${activeModel}) & tạo nội dung...`);
     setError(null);
     tts.stop();
     setIsPlayingAudio(false);
@@ -150,8 +165,16 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
         activeModel,
         (accumulatedText) => {
           setStreamProgressText(accumulatedText);
-          if (accumulatedText.length > 30) {
-            setStreamStage(`✍️ AI đang suy nghĩ & sinh bài đọc theo chủ đề "${activeTopic}"...`);
+          if (accumulatedText.length > 5) {
+            if (accumulatedText.includes('"newWordsDetected"')) {
+              setStreamStage('🔍 AI đang trích xuất từ mới, bộ thủ & mẹo nhớ chữ...');
+            } else if (accumulatedText.includes('"sentences"')) {
+              setStreamStage('📝 AI đang phân tích từng câu & pinyin...');
+            } else if (accumulatedText.includes('"vietnameseTranslation"')) {
+              setStreamStage('🌐 AI đang hoàn thiện bản dịch nghĩa tiếng Việt...');
+            } else {
+              setStreamStage(`✍️ AI đang soạn bài đọc theo chủ đề "${activeTopic}"...`);
+            }
           }
         }
       );
@@ -179,7 +202,7 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
 
     setIsStreaming(true);
     setStreamProgressText('');
-    setStreamStage('⚡ AI đang phân tích cấu trúc ngữ pháp, Pinyin, từ vựng và chiết tự...');
+    setStreamStage('⚡ AI đang khởi động bộ phân tích ngôn ngữ học...');
     setError(null);
     tts.stop();
     setIsPlayingAudio(false);
@@ -193,8 +216,16 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
         activeModel,
         (accumulatedText) => {
           setStreamProgressText(accumulatedText);
-          if (accumulatedText.length > 30) {
-            setStreamStage('✍️ AI đang giải nghĩa chi tiết từng câu và trích xuất từ mới...');
+          if (accumulatedText.length > 5) {
+            if (accumulatedText.includes('"newWordsDetected"')) {
+              setStreamStage('🔍 AI đang trích xuất từ mới & chiết tự bộ thủ...');
+            } else if (accumulatedText.includes('"tokens"')) {
+              setStreamStage('🧩 AI đang phân tích từ vựng tương tác từng câu...');
+            } else if (accumulatedText.includes('"sentences"')) {
+              setStreamStage('📝 AI đang giải nghĩa chi tiết ngữ pháp...');
+            } else {
+              setStreamStage('✍️ AI đang đọc hiểu đoạn văn...');
+            }
           }
         }
       );
@@ -337,8 +368,6 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
     setStory(null);
     soundEffects.playClick();
   };
-
-  const previewChinese = extractReadableChinesePreview(streamProgressText);
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 py-1 space-y-4">
@@ -673,21 +702,30 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
 
             <div className="flex items-center gap-1.5 text-[11px] text-[#5eb786] bg-[#1a261d] px-2.5 py-1 rounded-xl border border-[#2d4734]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#5eb786] animate-pulse" />
-              <span>Live Streaming</span>
+              <span>{settings.geminiModel || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite'}</span>
             </div>
           </div>
 
-          {/* Live Text Box (Showing readable Chinese sentences as they form) */}
-          <div className="p-5 rounded-2xl bg-[#14110f] border border-[#2e2621] min-h-[100px] flex flex-col justify-center space-y-2">
+          {/* Live Text Box (Showing readable Chinese sentences as they form in real time) */}
+          <div className="p-5 rounded-2xl bg-[#14110f] border border-[#2e2621] min-h-[110px] flex flex-col justify-center space-y-2">
             {streamProgressText ? (
-              <div className="font-chinese text-xl sm:text-2xl text-[#f5ede4] leading-relaxed whitespace-pre-wrap">
-                {previewChinese}
-                <span className="inline-block w-2.5 h-5 bg-[#df5343] ml-1.5 animate-pulse align-middle" />
+              <div className="space-y-2">
+                <div className="font-chinese text-xl sm:text-2xl text-[#f5ede4] leading-relaxed whitespace-pre-wrap">
+                  {previewChinese}
+                  <span className="inline-block w-2.5 h-5 bg-[#df5343] ml-1.5 animate-pulse align-middle" />
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-[#8e837a] pt-2 border-t border-[#2e2621]/40">
+                  <span className="flex items-center gap-1.5 text-[#e5a044]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#e5a044] animate-ping" />
+                    Đang truyền trực tiếp: {streamProgressText.length} ký tự
+                  </span>
+                  <span className="text-[#5eb786] font-medium">● Đang nhận liên tục</span>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-center gap-2 text-xs text-[#8e837a] py-4">
                 <Loader2 className="w-4 h-4 animate-spin text-[#df5343]" />
-                <span>Đang kết nối luồng AI và tải vốn từ...</span>
+                <span>Đang kết nối Gemini và tổng hợp từ vựng...</span>
               </div>
             )}
           </div>
