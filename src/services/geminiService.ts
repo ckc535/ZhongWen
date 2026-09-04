@@ -779,14 +779,61 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
     };
   }
 
-  // 5. Test API Connection
+  // 5. Test API Connection (Fast with auto-timeout - Never hangs)
   public static async testGeminiApiKey(apiKey?: string, model?: string): Promise<boolean> {
+    const envModel = model || import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite';
+    const targetModel = normalizeModelName(envModel);
+
+    // 1. First priority: Server proxy non-stream endpoint (ultra-fast, secure)
     try {
-      const res = await GeminiService.callAiEngineStream(apiKey, model, 'Trả về JSON: {"status": "ok"}', true);
-      return Boolean(res && res.trim().length > 0);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7000);
+
+      const res = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'Kiểm tra kết nối: OK',
+          model: targetModel,
+          isJson: false,
+          apiKey: apiKey || undefined
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          GeminiService.setConnectionState('connected');
+          return true;
+        }
+      }
     } catch (err) {
-      console.error('Test API Key error:', err);
-      return false;
+      console.warn('[GeminiService] Server AI test failed, trying direct:', err);
     }
+
+    // 2. Direct client fallback with 7s timeout
+    try {
+      const envKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
+      const activeKey = GeminiService.getActiveApiKey(envKey);
+      if (!activeKey) return false;
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7000);
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}?key=${activeKey}`;
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        GeminiService.setConnectionState('connected');
+        return true;
+      }
+    } catch (err) {
+      console.error('[GeminiService] Direct AI test error:', err);
+    }
+
+    return false;
   }
 }
