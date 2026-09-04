@@ -779,11 +779,11 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
     };
   }
 
-  // 5. Test API Key
+  // 5. Test API Connection
   public static async testGeminiApiKey(apiKey?: string, model?: string): Promise<boolean> {
     try {
-      const res = await GeminiService.callAiEngineStream(apiKey, model, '{"status": "OK"}', true);
-      return res.includes('OK');
+      const res = await GeminiService.callAiEngineStream(apiKey, model, 'Trả về JSON: {"status": "ok"}', true);
+      return Boolean(res && res.trim().length > 0);
     } catch (err) {
       console.error('Test API Key error:', err);
       return false;
