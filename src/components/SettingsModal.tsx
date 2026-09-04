@@ -296,7 +296,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-[#df5343]" />
               <h3 className="text-xs font-bold text-[#f5ede4] uppercase tracking-wider">
-                Cấu Hình Google Gemini AI
+                Mô Hình Google Gemini AI
               </h3>
             </div>
 
@@ -321,36 +321,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           <div className="space-y-3">
-            {/* API Key Input */}
-            <div>
-              <label className="block text-xs font-medium text-[#d8cebe] mb-1">
-                Google Gemini API Key
-              </label>
-              <div className="relative flex items-center">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={geminiApiKey}
-                  onChange={(e) => setGeminiApiKey(e.target.value)}
-                  placeholder="Để trống sẽ dùng API Key mặc định từ file .env"
-                  className="w-full h-9 bg-[#1f1a17] border border-[#2e2621] focus:border-[#df5343] rounded-xl pl-3 pr-9 text-xs text-[#f5ede4] focus:outline-none font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2.5 text-[#8e837a] hover:text-[#f5ede4] cursor-pointer"
-                >
-                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <p className="text-[10px] text-[#8e837a] mt-1">
-                Có thể nhập nhiều key cách nhau bằng dấu phẩy (,) để hệ thống tự động xoay vòng khi hết quota.
-              </p>
-            </div>
-
             {/* AI Model Selector */}
             <div>
               <label className="block text-xs font-medium text-[#d8cebe] mb-1">
-                Mô hình AI sử dụng
+                Mô hình AI đang sử dụng
               </label>
               <select
                 value={geminiModel}
@@ -361,6 +335,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <option value="gemini-3.6-flash">Gemini 3.6 Flash (Cân bằng & Chuẩn xác)</option>
                 <option value="gemini-3.7-flash">Gemini 3.7 Flash (Mô hình thông minh cao cấp)</option>
               </select>
+              <p className="text-[10px] text-[#8e837a] mt-1">
+                API Key được bảo mật và quản lý an toàn từ phía hệ thống máy chủ.
+              </p>
             </div>
 
             {/* Test Status Message */}
