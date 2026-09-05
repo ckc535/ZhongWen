@@ -378,21 +378,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="space-y-3">
             {/* Voice Engine Picker */}
             <div>
-              <label className="block text-xs font-medium text-[#d8cebe] mb-1">
-                Giọng phát âm tiếng Trung:
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-[#d8cebe]">
+                  Giọng phát âm tiếng Trung:
+                </label>
+                {tts.isUsingOnlineAudio() && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#33261a] border border-[#553c24] text-[#e5a044]">
+                    Trực tuyến bản xứ
+                  </span>
+                )}
+              </div>
               <select
                 value={selectedVoiceURI}
                 onChange={(e) => setSelectedVoiceURI(e.target.value)}
                 className="w-full h-9 bg-[#1f1a17] border border-[#2e2621] focus:border-[#df5343] rounded-xl px-3 text-xs text-[#f5ede4] focus:outline-none cursor-pointer"
               >
-                <option value="">Tự động chọn giọng chuẩn nhất (Natural / Online)</option>
+                <option value="">
+                  {availableVoices.length === 0
+                    ? 'Tự động: Phát âm trực tuyến chuẩn bản xứ (HD Mandarin)'
+                    : 'Tự động chọn giọng chuẩn nhất (Natural / Online)'}
+                </option>
                 {availableVoices.map((v) => (
                   <option key={v.voiceURI} value={v.voiceURI}>
                     {v.name} ({v.lang})
                   </option>
                 ))}
               </select>
+
+              {availableVoices.length === 0 && (
+                <p className="mt-1.5 text-[11px] text-[#8e837a] leading-relaxed">
+                  💡 <strong className="text-[#d8cebe]">Đã tối ưu:</strong> Trình duyệt của bạn (Brave / Edge hoặc máy tính chưa cài gói tiếng Trung) đang được tự động kích hoạt chế độ phát âm trực tuyến chuẩn tiếng Phổ thông.
+                </p>
+              )}
             </div>
 
             {/* Voice Rate Slider */}

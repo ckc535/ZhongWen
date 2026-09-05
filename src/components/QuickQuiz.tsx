@@ -34,6 +34,7 @@ export const QuickQuiz: React.FC = () => {
   const [maxStreak, setMaxStreak] = useState<number>(0);
   const [wrongQuestions, setWrongQuestions] = useState<QuizQuestion[]>([]);
   const [isFinished, setIsFinished] = useState<boolean>(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
   // Generate Questions Pool
   const generateQuestions = (): QuizQuestion[] => {
@@ -158,11 +159,19 @@ export const QuickQuiz: React.FC = () => {
     soundEffects.playClick();
   };
 
+  const handlePlayAudio = (text?: string) => {
+    if (!text) return;
+    setIsPlayingAudio(true);
+    tts.speak(text, settings.voiceRate, settings.voicePitch, () => {
+      setIsPlayingAudio(false);
+    });
+  };
+
   const currentQ = questions[currentIndex];
 
   useEffect(() => {
     if (isPlaying && currentQ?.audioText && !isFinished) {
-      tts.speak(currentQ.audioText, settings.voiceRate, settings.voicePitch);
+      handlePlayAudio(currentQ.audioText);
     }
   }, [currentIndex, isPlaying, isFinished]);
 
@@ -338,10 +347,15 @@ export const QuickQuiz: React.FC = () => {
           <div className="py-2">
             {currentQ.type === 'audio-to-hanzi' ? (
               <button
-                onClick={() => currentQ.audioText && tts.speak(currentQ.audioText, settings.voiceRate, settings.voicePitch)}
-                className="w-20 h-20 mx-auto rounded-3xl bg-[#27211d] hover:bg-[#322a25] border border-[#382f29] flex items-center justify-center text-[#df5343] transition-transform active:scale-95"
+                onClick={() => handlePlayAudio(currentQ.audioText)}
+                className={`w-20 h-20 mx-auto rounded-3xl border flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                  isPlayingAudio
+                    ? 'bg-[#33261a] border-[#553c24] text-[#e5a044] scale-105 shadow-lg shadow-[#e5a044]/20'
+                    : 'bg-[#27211d] hover:bg-[#322a25] border-[#382f29] text-[#df5343]'
+                }`}
+                title="Bấm để nghe âm thanh"
               >
-                <Volume2 className="w-8 h-8" />
+                <Volume2 className={`w-8 h-8 ${isPlayingAudio ? 'animate-pulse' : ''}`} />
               </button>
             ) : (
               <div className="flex items-center justify-center gap-3">
@@ -352,11 +366,15 @@ export const QuickQuiz: React.FC = () => {
                 </span>
                 {currentQ.audioText && (
                   <button
-                    onClick={() => currentQ.audioText && tts.speak(currentQ.audioText, settings.voiceRate, settings.voicePitch)}
-                    className="p-2 rounded-xl bg-[#27211d] hover:bg-[#322a25] text-[#df5343] border border-[#382f29]"
-                    title="Nghe lại"
+                    onClick={() => handlePlayAudio(currentQ.audioText)}
+                    className={`p-2 rounded-xl border transition-all active:scale-95 cursor-pointer ${
+                      isPlayingAudio
+                        ? 'bg-[#33261a] border-[#553c24] text-[#e5a044] scale-110 shadow-md shadow-[#e5a044]/20'
+                        : 'bg-[#27211d] hover:bg-[#322a25] text-[#df5343] border-[#382f29]'
+                    }`}
+                    title="Nghe phát âm chuẩn"
                   >
-                    <Volume2 className="w-4 h-4" />
+                    <Volume2 className={`w-4 h-4 ${isPlayingAudio ? 'animate-pulse' : ''}`} />
                   </button>
                 )}
               </div>

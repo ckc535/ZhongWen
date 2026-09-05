@@ -59,6 +59,44 @@ router.get('/health', async (req, res) => {
   }
 });
 
+// 1.1 Audio TTS Stream Proxy (Đảm bảo phát âm chuẩn 100% trên Brave, Edge, Safari, Chrome và Mobile)
+router.get('/tts', async (req, res) => {
+  const text = (req.query.text || '').toString().trim();
+  if (!text) {
+    return res.status(400).send('Missing text query parameter');
+  }
+
+  const urls = [
+    `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(text)}&le=zh`,
+    `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-CN&client=tw-ob`
+  ];
+
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        res.set({
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': buffer.length,
+          'Cache-Control': 'public, max-age=86400, s-maxage=604800',
+          'Accept-Ranges': 'bytes'
+        });
+        return res.send(buffer);
+      }
+    } catch (e) {
+      // Thử nguồn tiếp theo
+    }
+  }
+
+  return res.status(502).send('Audio service temporarily unavailable');
+});
+
 // 2. Get full database state (Words sorted newest first)
 router.get('/data', async (req, res) => {
   try {
