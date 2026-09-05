@@ -603,7 +603,7 @@ Trả về mảng JSON chuẩn:
     onStreamChunk?: (accumulatedText: string, latestChunk: string) => void
   ): Promise<StoryPassage> {
     const priorityWords = userWords
-      .filter(w => w.isStarred || w.box <= 2 || !w.lastReviewed)
+      .filter(w => w.isStarred || !w.isMastered)
       .map(w => w.hanzi)
       .slice(0, 50)
       .join(', ');

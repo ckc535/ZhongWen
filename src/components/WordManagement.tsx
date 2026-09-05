@@ -20,8 +20,7 @@ import {
   FolderPlus,
   Check,
   ChevronLeft,
-  ChevronRight,
-  ChevronDown
+  ChevronRight
 } from 'lucide-react';
 
 interface WordManagementProps {
@@ -41,6 +40,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     updateWord,
     deleteWord,
     toggleStar,
+    toggleWordMastered,
     resetToHsk1Starter,
     settings,
     hsk1WordsCount,
@@ -65,17 +65,14 @@ export const WordManagement: React.FC<WordManagementProps> = ({
   // Category Tab Filter (Tất cả / Từ gốc HSK 1 / Từ tự thêm)
   const [categoryTab, setCategoryTab] = useState<'all' | 'hsk1' | 'custom'>('all');
 
-  // Search & Status Filters (Tất cả / Chưa thuộc / Đã thuộc / Từ khó)
+  // Search & Status Filters (2 trạng thái: Chưa thuộc / Đã thuộc + Tag: Từ khó)
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'unmastered' | 'mastered' | 'starred'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'unmastered' | 'mastered'>('all');
+  const [filterStarredOnly, setFilterStarredOnly] = useState<boolean>(false);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(15);
-
-  // Status Change Menu Popover
-  const [statusMenuWordId, setStatusMenuWordId] = useState<string | null>(null);
-  const statusMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Edit Word State
   const [editingWord, setEditingWord] = useState<Word | null>(null);
@@ -83,7 +80,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
   // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [categoryTab, filterStatus, searchQuery, pageSize]);
+  }, [categoryTab, filterStatus, filterStarredOnly, searchQuery, pageSize]);
 
   // Play audio
   const handlePlayAudio = (e: React.MouseEvent, hanzi: string) => {
@@ -251,22 +248,6 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     setAiError(null);
   };
 
-  // Handle Status Option Select (Chưa thuộc / Đã thuộc / Từ khó)
-  const handleSetStatus = (e: React.MouseEvent, word: Word, status: 'unmastered' | 'mastered' | 'starred') => {
-    e.stopPropagation();
-    e.preventDefault();
-    soundEffects.playSuccess();
-
-    if (status === 'unmastered') {
-      updateWord(word.id, { box: 1, isStarred: false });
-    } else if (status === 'mastered') {
-      updateWord(word.id, { box: 5, isStarred: false });
-    } else if (status === 'starred') {
-      updateWord(word.id, { isStarred: true });
-    }
-    setStatusMenuWordId(null);
-  };
-
   // 1. Words filtered by Category Tab (used for consistent count badges)
   const categoryWords = useMemo(() => {
     return words.filter(word => {
@@ -280,13 +261,13 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     });
   }, [words, categoryTab]);
 
-  // Fixed counts for all 4 status filter tabs
+  // Fixed counts for all status and tag filters
   const allCategoryCount = categoryWords.length;
-  const unmasteredCount = useMemo(() => categoryWords.filter(w => w.box < 5).length, [categoryWords]);
-  const masteredCount = useMemo(() => categoryWords.filter(w => w.box >= 5).length, [categoryWords]);
+  const unmasteredCount = useMemo(() => categoryWords.filter(w => !w.isMastered).length, [categoryWords]);
+  const masteredCount = useMemo(() => categoryWords.filter(w => w.isMastered).length, [categoryWords]);
   const starredCount = useMemo(() => categoryWords.filter(w => w.isStarred).length, [categoryWords]);
 
-  // 2. Filtered words list (applying search query, status filter, and sorted newest first)
+  // 2. Filtered words list (applying search query, status filter (2 trạng thái), tag filter (Từ khó), and sorted newest first)
   const filteredWords = useMemo(() => {
     return categoryWords
       .filter(word => {
@@ -300,19 +281,18 @@ export const WordManagement: React.FC<WordManagementProps> = ({
           if (!matchHanzi && !matchPinyin && !matchVi && !matchHanViet) return false;
         }
 
-        // Status filter (Tất cả / Chưa thuộc / Đã thuộc / Từ khó)
-        if (filterStatus === 'unmastered') {
-          if (word.box >= 5) return false;
-        } else if (filterStatus === 'mastered') {
-          if (word.box < 5) return false;
-        } else if (filterStatus === 'starred') {
-          if (!word.isStarred) return false;
-        }
+        // Status filter: Chỉ 2 trạng thái 'unmastered' (Chưa thuộc) và 'mastered' (Đã thuộc)
+        const isMastered = Boolean(word.isMastered);
+        if (filterStatus === 'unmastered' && isMastered) return false;
+        if (filterStatus === 'mastered' && !isMastered) return false;
+
+        // Tag filter: Chỉ lọc các từ có gắn sao từ khó
+        if (filterStarredOnly && !word.isStarred) return false;
 
         return true;
       })
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  }, [categoryWords, searchQuery, filterStatus]);
+  }, [categoryWords, searchQuery, filterStatus, filterStarredOnly]);
 
   // Pagination calculation
   const totalItems = filteredWords.length;
@@ -324,13 +304,6 @@ export const WordManagement: React.FC<WordManagementProps> = ({
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 py-1 space-y-4">
-      {/* Click outside backdrop for status popover */}
-      {statusMenuWordId && (
-        <div
-          className="fixed inset-0 z-30"
-          onClick={() => setStatusMenuWordId(null)}
-        />
-      )}
 
       {/* ================= SECTION 1: THÊM CHỮ MỚI (ĐẦY ĐỦ 6 FIELD) ================= */}
       <div className="p-6 rounded-3xl bg-[#1f1a17] border border-[#2e2621] space-y-3.5 shadow-sm">
@@ -647,17 +620,18 @@ export const WordManagement: React.FC<WordManagementProps> = ({
           )}
         </div>
 
-        {/* 4 Status Filter Buttons: Tất cả / Chưa thuộc / Đã thuộc / ⭐ Từ khó */}
+        {/* Status Filters: Tất cả / Chưa thuộc / Đã thuộc + Tag: Từ khó */}
         <div className="space-y-1.5">
           <p className="text-[11px] text-[#8e837a]">
-            💡 Bấm nhãn <strong>Chưa thuộc / Đã thuộc</strong> để mở menu đổi trạng thái học — hoặc bấm ⭐ để đánh dấu từ khó.
+            💡 Bấm trực tiếp nút <strong>Chưa thuộc / Đã thuộc</strong> ở từng từ để chuyển đổi và đồng bộ vào tài khoản — hoặc bấm ⭐ để gắn tag từ khó.
           </p>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <button
+                type="button"
                 onClick={() => setFilterStatus('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
                   filterStatus === 'all'
                     ? 'bg-[#33261a] text-[#e5a044] border-[#553c24]'
                     : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
@@ -667,38 +641,48 @@ export const WordManagement: React.FC<WordManagementProps> = ({
               </button>
 
               <button
+                type="button"
                 onClick={() => setFilterStatus('unmastered')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
                   filterStatus === 'unmastered'
                     ? 'bg-[#2b1917] text-[#e05344] border-[#4d2522]'
                     : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
                 }`}
               >
+                <X className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Chưa thuộc ({unmasteredCount})</span>
               </button>
 
               <button
+                type="button"
                 onClick={() => setFilterStatus('mastered')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
                   filterStatus === 'mastered'
                     ? 'bg-[#1e2a22] text-[#62ba89] border-[#2d4734]'
                     : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
                 }`}
               >
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Đã thuộc ({masteredCount})</span>
               </button>
 
               <button
-                onClick={() => setFilterStatus('starred')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${
-                  filterStatus === 'starred'
-                    ? 'bg-[#332815] text-[#e5a044] border-[#59421e]'
+                type="button"
+                onClick={() => setFilterStarredOnly(prev => !prev)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
+                  filterStarredOnly
+                    ? 'bg-[#332815] text-[#e5a044] border-[#e5a044] shadow-sm'
                     : 'bg-[#161311] text-[#8e837a] border-[#2e2621] hover:text-[#d8cebe]'
                 }`}
+                title="Bấm để bật/tắt lọc theo tag Từ khó"
               >
-                <Star className="w-3.5 h-3.5 fill-current text-[#e5a044]" />
-                <span>Từ khó ({starredCount})</span>
+                <Star className={`w-3.5 h-3.5 ${filterStarredOnly ? 'fill-current text-[#e5a044]' : 'text-[#8e837a]'}`} />
+                <span>Tag: Từ khó ({starredCount})</span>
+                {filterStarredOnly && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#e5a044]/20 text-[#e5a044] font-semibold">
+                    Đang lọc
+                  </span>
+                )}
               </button>
             </div>
 
@@ -730,8 +714,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
             </div>
           ) : (
             paginatedWords.map((word) => {
-              const isMastered = word.box >= 5;
-              const isMenuOpen = statusMenuWordId === word.id;
+              const isMastered = Boolean(word.isMastered);
 
               return (
                 <div
@@ -771,8 +754,16 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                             <span>{word.lesson || 'Tự thêm'}</span>
                           </span>
                         )}
+                        {/* Starred Tag Badge */}
+                        {word.isStarred && (
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#332815] text-[#e5a044] border border-[#59421e] font-semibold flex items-center gap-1" title="Đã gắn tag Từ khó">
+                            <Star className="w-2.5 h-2.5 fill-current" />
+                            <span>Từ khó</span>
+                          </span>
+                        )}
                         {/* Audio speaker button directly next to pinyin */}
                         <button
+                          type="button"
                           onClick={(e) => handlePlayAudio(e, word.hanzi)}
                           className="p-1 rounded-md text-[#8e837a] hover:text-[#df5343] hover:bg-[#27211d] transition-colors cursor-pointer"
                           title="Nghe phát âm"
@@ -787,101 +778,41 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                     </div>
                   </div>
 
-                  {/* Bottom on Mobile / Right on Desktop: Interactive Status Dropdown, Star, Edit, Delete */}
+                  {/* Bottom on Mobile / Right on Desktop: Direct Status Toggle (1-click calling API), Star Tag, Edit, Delete */}
                   <div className="flex items-center justify-between sm:justify-end gap-1.5 pt-2 sm:pt-0 border-t border-[#241e1a] sm:border-t-0 shrink-0">
-                    {/* Interactive Status Dropdown Button */}
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setStatusMenuWordId(isMenuOpen ? null : word.id);
-                        }}
-                        className={`px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
-                          word.isStarred
-                            ? 'bg-[#332815] text-[#e5a044] border-[#59421e] hover:bg-[#3d301a]'
-                            : isMastered
-                            ? 'bg-[#1e2a22] text-[#62ba89] border-[#2d4734] hover:bg-[#25382b]'
-                            : 'bg-[#27211d] text-[#8e837a] border-[#382f29] hover:text-[#d8cebe] hover:bg-[#322a25]'
-                        }`}
-                        title="Bấm để đổi trạng thái học (Chưa thuộc / Đã thuộc / Từ khó)"
-                      >
-                        {word.isStarred ? (
-                          <Star className="w-3 h-3 fill-current text-[#e5a044]" />
-                        ) : isMastered ? (
-                          <Check className="w-3 h-3 stroke-[2.5]" />
-                        ) : (
-                          <span className="w-2 h-2 rounded-full bg-[#df5343]" />
-                        )}
-                        <span>
-                          {word.isStarred ? 'Từ khó' : isMastered ? 'Đã thuộc' : 'Chưa thuộc'}
-                        </span>
-                        <ChevronDown className="w-3 h-3 opacity-60" />
-                      </button>
-
-                      {/* Floating Status Selection Menu */}
-                      {isMenuOpen && (
-                        <div
-                          ref={statusMenuRef}
-                          className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1.5 w-44 rounded-2xl bg-[#1f1a17] border border-[#382f29] shadow-2xl p-1.5 z-40 space-y-1 animate-in fade-in zoom-in-95 duration-100"
-                        >
-                          <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8e837a] border-b border-[#2e2621]">
-                            Đổi trạng thái học
-                          </div>
-
-                          <button
-                            type="button"
-                            onPointerDown={(e) => handleSetStatus(e, word, 'unmastered')}
-                            onClick={(e) => handleSetStatus(e, word, 'unmastered')}
-                            className={`w-full px-2.5 py-1.5 rounded-xl text-xs flex items-center gap-2 text-left transition-colors cursor-pointer ${
-                              !isMastered && !word.isStarred
-                                ? 'bg-[#2b1917] text-[#e05344] font-bold'
-                                : 'text-[#d8cebe] hover:bg-[#27211d]'
-                            }`}
-                          >
-                            <span className="w-2 h-2 rounded-full bg-[#df5343]" />
-                            <span>Chưa thuộc</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onPointerDown={(e) => handleSetStatus(e, word, 'mastered')}
-                            onClick={(e) => handleSetStatus(e, word, 'mastered')}
-                            className={`w-full px-2.5 py-1.5 rounded-xl text-xs flex items-center gap-2 text-left transition-colors cursor-pointer ${
-                              isMastered && !word.isStarred
-                                ? 'bg-[#1e2a22] text-[#62ba89] font-bold'
-                                : 'text-[#d8cebe] hover:bg-[#27211d]'
-                            }`}
-                          >
-                            <Check className="w-3.5 h-3.5 text-[#62ba89]" />
-                            <span>✓ Đã thuộc</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onPointerDown={(e) => handleSetStatus(e, word, 'starred')}
-                            onClick={(e) => handleSetStatus(e, word, 'starred')}
-                            className={`w-full px-2.5 py-1.5 rounded-xl text-xs flex items-center gap-2 text-left transition-colors cursor-pointer ${
-                              word.isStarred
-                                ? 'bg-[#332815] text-[#e5a044] font-bold'
-                                : 'text-[#d8cebe] hover:bg-[#27211d]'
-                            }`}
-                          >
-                            <Star className="w-3.5 h-3.5 fill-current text-[#e5a044]" />
-                            <span>⭐ Từ khó</span>
-                          </button>
-                        </div>
+                    {/* Direct 1-Click Status Toggle Button calling API */}
+                    <button
+                      type="button"
+                      onClick={() => toggleWordMastered(word.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                        isMastered
+                          ? 'bg-[#1e2a22] text-[#62ba89] border-[#2d4734] hover:bg-[#25382b] hover:border-[#3d6046]'
+                          : 'bg-[#2b1917] text-[#e05344] border-[#4d2522] hover:bg-[#38201d] hover:border-[#6b332f]'
+                      }`}
+                      title={isMastered ? 'Đang là Đã thuộc — Bấm để đổi thành Chưa thuộc' : 'Đang là Chưa thuộc — Bấm để đổi thành Đã thuộc'}
+                    >
+                      {isMastered ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>Đã thuộc</span>
+                        </>
+                      ) : (
+                        <>
+                          <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>Chưa thuộc</span>
+                        </>
                       )}
-                    </div>
+                    </button>
 
                     <div className="flex items-center gap-1">
-                      {/* Quick Star Toggle Button */}
+                      {/* Quick Star Tag Toggle Button */}
                       <button
+                        type="button"
                         onClick={() => toggleStar(word.id)}
                         className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          word.isStarred ? 'text-[#e5a044]' : 'text-[#5a5047] hover:text-[#8e837a]'
+                          word.isStarred ? 'text-[#e5a044] hover:text-[#f3b55c]' : 'text-[#5a5047] hover:text-[#8e837a]'
                         }`}
-                        title={word.isStarred ? 'Bỏ gắn sao từ khó' : 'Đánh dấu từ khó'}
+                        title={word.isStarred ? 'Bỏ tag từ khó' : 'Gắn tag từ khó (⭐)'}
                       >
                         <Star className={`w-3.5 h-3.5 ${word.isStarred ? 'fill-[#e5a044]' : ''}`} />
                       </button>
@@ -889,6 +820,7 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                       {/* Stroke Writer Button */}
                       {onOpenStrokeWriter && (
                         <button
+                          type="button"
                           onClick={() => onOpenStrokeWriter(word.hanzi)}
                           className="p-1.5 rounded-lg text-[#5a5047] hover:text-[#5bb3e0] transition-colors cursor-pointer"
                           title="Xem thứ tự nét viết"

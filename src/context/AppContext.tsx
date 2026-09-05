@@ -30,6 +30,7 @@ interface AppContextType {
   updateWord: (id: string, updates: Partial<Word>) => Promise<void>;
   deleteWord: (id: string) => Promise<void>;
   toggleStar: (id: string) => void;
+  toggleWordMastered: (id: string) => Promise<void>;
   recordReview: (id: string, remembered: boolean) => void;
   recordActivity: (targetUser?: UserProfile | null) => Promise<void>;
   resetToHsk1Starter: () => Promise<void>;
@@ -304,9 +305,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return sharedWords
       .map(word => {
         const prog = currentUserProgressMap[word.id];
+        const isMastered = prog?.isMastered !== undefined
+          ? prog.isMastered
+          : ((prog?.box ?? 1) >= 5);
         return {
           ...word,
-          box: prog?.box !== undefined ? prog.box : 1,
+          isMastered,
+          box: isMastered ? 5 : 1,
           isStarred: prog?.isStarred !== undefined ? prog.isStarred : false,
           reviewCount: prog?.reviewCount || 0,
           correctCount: prog?.correctCount || 0,
@@ -317,20 +322,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [sharedWords, currentUserProgressMap]);
 
-  // Counts
+  // Counts (Chỉ 2 mức: Chưa thuộc và Đã thuộc)
   const totalWordsCount = words.length;
-  const masteredWordsCount = words.filter(w => w.box >= 5).length;
-  const unmasteredWordsCount = words.filter(w => (w.box || 1) < 5).length;
+  const masteredWordsCount = words.filter(w => w.isMastered).length;
+  const unmasteredWordsCount = words.filter(w => !w.isMastered).length;
   const starredWordsCount = words.filter(w => w.isStarred).length;
   const hsk1WordsCount = words.filter(w => w.source === 'hsk1' || (w.lesson && w.lesson.toLowerCase().includes('hsk'))).length;
   const customWordsCount = words.filter(w => !(w.source === 'hsk1' || (w.lesson && w.lesson.toLowerCase().includes('hsk')))).length;
 
-  const now = Date.now();
-  const dueWordsCount = words.filter(w => {
-    if (!w.lastReviewed) return true;
-    const boxDays = [0, 1, 2, 4, 7, 14][w.box] || 1;
-    return now - w.lastReviewed >= boxDays * 24 * 60 * 60 * 1000;
-  }).length;
+  // Cần ôn = các từ Chưa thuộc
+  const dueWordsCount = unmasteredWordsCount;
 
   // Add Word (Shared for all users - Prevent Duplicate Hanzis)
   const addWord = useCallback(async (newWord: Partial<Word>): Promise<Word> => {
@@ -516,7 +517,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }));
 
-    ApiService.updateUserProgress(activeUserId, { wordId, progress: newProg });
+    if (newStarred) {
+      soundEffects.playSuccess();
+    } else {
+      soundEffects.playClick();
+    }
+
+    ApiService.updateUserProgress(activeUserId, { wordId, isStarred: newStarred });
+  }, [activeUserId, currentUserProgressMap]);
+
+  // Toggle Word Mastered (Đã thuộc <-> Chưa thuộc) specifically for current user
+  const toggleWordMastered = useCallback(async (wordId: string) => {
+    const currentProg = currentUserProgressMap[wordId];
+    const isCurrentlyMastered = currentProg?.isMastered !== undefined
+      ? currentProg.isMastered
+      : ((currentProg?.box ?? 1) >= 5);
+    const newMastered = !isCurrentlyMastered;
+
+    const newProg: UserWordProgress = {
+      ...(currentProg || {
+        reviewCount: 0,
+        correctCount: 0,
+        wrongCount: 0,
+        lastReviewed: null
+      }),
+      isMastered: newMastered,
+      box: newMastered ? 5 : 1,
+      isStarred: currentProg?.isStarred || false
+    };
+
+    // 1. Optimistic UI update (0ms latency)
+    setAllUserProgress(prev => ({
+      ...prev,
+      [activeUserId]: {
+        ...(prev[activeUserId] || {}),
+        [wordId]: newProg
+      }
+    }));
+
+    // 2. Play sound feedback
+    if (newMastered) {
+      soundEffects.playSuccess();
+    } else {
+      soundEffects.playClick();
+    }
+
+    // 3. Persist to MongoDB backend under active user's progress
+    await ApiService.updateUserProgress(activeUserId, {
+      wordId,
+      isMastered: newMastered,
+      box: newMastered ? 5 : 1
+    });
   }, [activeUserId, currentUserProgressMap]);
 
   // Record learning activity & automatically calculate/update consecutive day streak
@@ -562,9 +613,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, [currentUser]);
 
-  // Record Review Result (Specific to Current User)
+  // Record Review Result (Đã nhớ -> Đã thuộc, Chưa nhớ -> Chưa thuộc)
   const recordReview = useCallback((wordId: string, remembered: boolean) => {
     const currentProg = currentUserProgressMap[wordId] || {
+      isMastered: false,
       box: 1,
       isStarred: false,
       reviewCount: 0,
@@ -573,10 +625,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastReviewed: null
     };
 
-    const newBox = remembered ? Math.min(5, (currentProg.box || 1) + 1) : 1;
     const newProg: UserWordProgress = {
       ...currentProg,
-      box: newBox,
+      isMastered: remembered,
+      box: remembered ? 5 : 1,
       reviewCount: (currentProg.reviewCount || 0) + 1,
       correctCount: remembered ? (currentProg.correctCount || 0) + 1 : (currentProg.correctCount || 0),
       wrongCount: remembered ? (currentProg.wrongCount || 0) : (currentProg.wrongCount || 0) + 1,
@@ -690,6 +742,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateWord,
         deleteWord,
         toggleStar,
+        toggleWordMastered,
         recordReview,
         recordActivity,
         resetToHsk1Starter,

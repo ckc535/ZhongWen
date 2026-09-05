@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { GeminiService, AiConnectionState } from '../services/geminiService';
-import { BookOpen, Sparkles, Layers, Zap, PenTool, Settings, Flame, CheckCircle2, Clock, Cpu } from 'lucide-react';
+import { BookOpen, Sparkles, Layers, Zap, PenTool, Settings, Flame, CheckCircle2, XCircle, Cpu } from 'lucide-react';
 
 interface HeaderProps {
   onOpenUserModal?: () => void;
@@ -10,7 +10,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsModal }) => {
   const {
-    dueWordsCount,
+    unmasteredWordsCount,
     totalWordsCount,
     masteredWordsCount,
     currentUser,
@@ -120,19 +120,19 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
 
       {/* 4 Stats Compact Ribbon (Ultra-compact on Mobile, Rich on Desktop) */}
       <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5 mb-3 sm:mb-4">
-        {/* 1. Chưa ôn (Cần ôn trong ngày) */}
+        {/* 1. Chưa thuộc */}
         <div
-          onClick={() => setActiveTab('study')}
+          onClick={() => setActiveTab('words')}
           className="p-2 sm:p-3.5 rounded-xl sm:rounded-2xl bg-[#1f1a17] hover:bg-[#27211d] border border-[#2e2621] hover:border-[#3d332c] transition-all cursor-pointer text-center sm:text-left group"
         >
           <div className="flex items-center justify-center sm:justify-between">
             <span className="text-base sm:text-2xl md:text-3xl font-black text-[#df5343]">
-              {dueWordsCount}
+              {unmasteredWordsCount}
             </span>
-            <Clock className="w-3.5 h-3.5 text-[#8e837a] hidden sm:block" />
+            <XCircle className="w-3.5 h-3.5 text-[#df5343] hidden sm:block" />
           </div>
           <p className="text-[10px] sm:text-xs text-[#8e837a] font-medium mt-0.5 truncate">
-            Chưa ôn
+            Chưa thuộc
           </p>
         </div>
 

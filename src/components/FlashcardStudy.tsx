@@ -21,7 +21,7 @@ import {
   Headphones,
   FileText,
   HelpCircle,
-  Clock
+  BookOpen
 } from 'lucide-react';
 
 interface FlashcardStudyProps {
@@ -44,7 +44,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
   // Study Config State
   const [direction, setDirection] = useState<StudyDirection>('hanzi-to-meaning');
-  const [filterMode, setFilterMode] = useState<StudyFilter>('due');
+  const [filterMode, setFilterMode] = useState<StudyFilter>('unmastered');
   const [scopeFilter, setScopeFilter] = useState<'all' | 'hsk1' | 'custom'>('all');
   const [isStudying, setIsStudying] = useState<boolean>(false);
 
@@ -70,22 +70,14 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
       pool = pool.filter(w => w.source === 'custom' || w.source === 'ai' || (!w.lesson?.includes('HSK 1') && w.source !== 'hsk1'));
     }
 
-    if (filterMode === 'due') {
-      const now = Date.now();
-      return pool.filter(w => {
-        if (!w.lastReviewed) return true;
-        const boxDays = [0, 1, 2, 4, 7, 14][w.box] || 1;
-        return now - w.lastReviewed >= boxDays * 24 * 60 * 60 * 1000;
-      });
+    if (filterMode === 'unmastered' || filterMode === 'due') {
+      return pool.filter(w => !w.isMastered);
     }
-    if (filterMode === 'unmastered') {
-      return pool.filter(w => (w.box || 1) < 5);
+    if (filterMode === 'mastered') {
+      return pool.filter(w => w.isMastered);
     }
     if (filterMode === 'starred') {
       return pool.filter(w => w.isStarred);
-    }
-    if (filterMode === 'mastered') {
-      return pool.filter(w => (w.box || 1) >= 5);
     }
     return pool;
   }, [words, filterMode, scopeFilter]);
@@ -496,9 +488,15 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
               {/* Top Meta: Box & Lesson & Star & Pen */}
               <div className="w-full flex items-center justify-between">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] sm:text-[11px] px-2 py-0.5 sm:py-1 rounded-lg bg-[#27211d] text-[#8e837a] border border-[#382f29] font-semibold">
-                    Hộp {currentWord.box}/5
-                  </span>
+                  {currentWord.isMastered ? (
+                    <span className="text-[10px] sm:text-[11px] px-2 py-0.5 sm:py-1 rounded-lg bg-[#1e2a22] text-[#62ba89] border border-[#2d4734] font-semibold flex items-center gap-1">
+                      <Check className="w-3 h-3 stroke-[2.5]" /> Đã thuộc
+                    </span>
+                  ) : (
+                    <span className="text-[10px] sm:text-[11px] px-2 py-0.5 sm:py-1 rounded-lg bg-[#2b1917] text-[#e05344] border border-[#4d2522] font-semibold flex items-center gap-1">
+                      <X className="w-3 h-3 stroke-[2.5]" /> Chưa thuộc
+                    </span>
+                  )}
                   {currentWord.lesson && (
                     <span className="text-[10px] px-2 py-0.5 rounded-lg bg-[#191512] text-[#8e837a] border border-[#2a221d] hidden xs:inline truncate max-w-[140px] sm:max-w-[180px]">
                       {currentWord.lesson}
@@ -664,9 +662,15 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
               {/* Top Header */}
               <div className="w-full flex items-center justify-between">
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] sm:text-[11px] px-2 py-0.5 sm:py-1 rounded-lg bg-[#27211d] text-[#8e837a] border border-[#382f29] font-semibold">
-                    Hộp {currentWord.box}/5
-                  </span>
+                  {currentWord.isMastered ? (
+                    <span className="text-[10px] sm:text-[11px] px-2 py-0.5 sm:py-1 rounded-lg bg-[#1e2a22] text-[#62ba89] border border-[#2d4734] font-semibold flex items-center gap-1">
+                      <Check className="w-3 h-3 stroke-[2.5]" /> Đã thuộc
+                    </span>
+                  ) : (
+                    <span className="text-[10px] sm:text-[11px] px-2 py-0.5 sm:py-1 rounded-lg bg-[#2b1917] text-[#e05344] border border-[#4d2522] font-semibold flex items-center gap-1">
+                      <X className="w-3 h-3 stroke-[2.5]" /> Chưa thuộc
+                    </span>
+                  )}
                   {currentWord.lesson && (
                     <span className="text-[10px] px-2 py-0.5 rounded-lg bg-[#191512] text-[#8e837a] border border-[#2a221d] hidden xs:inline truncate max-w-[140px] sm:max-w-[180px]">
                       {currentWord.lesson}
@@ -834,7 +838,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
           {/* Row 2: SRS Assessment Buttons (Phím 1: Chưa nhớ / Phím 2: Đã nhớ) */}
           <div className="grid grid-cols-2 gap-2 sm:gap-3">
-            {/* ✕ Chưa nhớ (Phím 1) */}
+            {/* Chưa nhớ (Phím 1) */}
             <button
               type="button"
               onClick={handleForgotten}
@@ -842,10 +846,10 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
               title="Đánh dấu chưa nhớ (Phím 1)"
             >
               <X className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span>✕ Chưa nhớ (1)</span>
+              <span>Chưa nhớ (1)</span>
             </button>
 
-            {/* ✓ Đã nhớ (Phím 2) */}
+            {/* Đã nhớ (Phím 2) */}
             <button
               type="button"
               onClick={handleRemembered}
@@ -853,7 +857,7 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
               title="Đánh dấu đã nhớ (Phím 2)"
             >
               <Check className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
-              <span>✓ Đã nhớ (2)</span>
+              <span>Đã nhớ (2)</span>
             </button>
           </div>
         </div>
@@ -982,57 +986,53 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
 
         {/* Dynamic counts per scope */}
         {(() => {
-          const now = Date.now();
           const scopedWords = words.filter(w => {
             if (scopeFilter === 'hsk1') return w.source === 'hsk1' || w.lesson?.includes('HSK 1');
             if (scopeFilter === 'custom') return w.source === 'custom' || w.source === 'ai' || (!w.lesson?.includes('HSK 1') && w.source !== 'hsk1');
             return true;
           });
 
-          const dueCount = scopedWords.filter(w => {
-            if (!w.lastReviewed) return true;
-            const boxDays = [0, 1, 2, 4, 7, 14][w.box] || 1;
-            return now - w.lastReviewed >= boxDays * 24 * 60 * 60 * 1000;
-          }).length;
-          const unmasteredCount = scopedWords.filter(w => (w.box || 1) < 5).length;
+          const unmasteredCount = scopedWords.filter(w => !w.isMastered).length;
+          const masteredCount = scopedWords.filter(w => w.isMastered).length;
           const starredCount = scopedWords.filter(w => w.isStarred).length;
           const allCount = scopedWords.length;
-          const masteredCount = scopedWords.filter(w => (w.box || 1) >= 5).length;
 
           return (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-              {/* 1. Chưa ôn (Due) */}
-              <button
-                type="button"
-                onClick={() => setFilterMode('due')}
-                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
-                  filterMode === 'due'
-                    ? 'bg-[#2b1917] border-[#df5343] text-white shadow-md'
-                    : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
-                }`}
-              >
-                <span className="block text-base sm:text-lg font-bold text-[#df5343]">
-                  {dueCount}
-                </span>
-                <span className="text-[11px] sm:text-xs font-semibold flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-[#df5343]" /> Chưa ôn
-                </span>
-              </button>
-
-              {/* 2. Chưa thuộc */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* 1. Chưa thuộc (Mặc định) */}
               <button
                 type="button"
                 onClick={() => setFilterMode('unmastered')}
                 className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
                   filterMode === 'unmastered'
-                    ? 'bg-[#2b1917] border-[#e06c5f] text-white shadow-md'
+                    ? 'bg-[#2b1917] border-[#df5343] text-white shadow-md'
                     : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
                 }`}
               >
-                <span className="block text-base sm:text-lg font-bold text-[#e06c5f]">
+                <span className="block text-base sm:text-lg font-bold text-[#df5343]">
                   {unmasteredCount}
                 </span>
-                <span className="text-[11px] sm:text-xs font-semibold">Chưa thuộc</span>
+                <span className="text-[11px] sm:text-xs font-semibold flex items-center gap-1">
+                  <X className="w-3 h-3 stroke-[2.5] text-[#df5343]" /> Chưa thuộc
+                </span>
+              </button>
+
+              {/* 2. Đã thuộc */}
+              <button
+                type="button"
+                onClick={() => setFilterMode('mastered')}
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
+                  filterMode === 'mastered'
+                    ? 'bg-[#1a261d] border-[#5eb786] text-white shadow-md'
+                    : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
+                }`}
+              >
+                <span className="block text-base sm:text-lg font-bold text-[#5eb786]">
+                  {masteredCount}
+                </span>
+                <span className="text-[11px] sm:text-xs font-semibold flex items-center gap-1">
+                  <Check className="w-3 h-3 stroke-[2.5] text-[#5eb786]" /> Đã thuộc
+                </span>
               </button>
 
               {/* 3. Từ khó ⭐ */}
@@ -1048,7 +1048,9 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                 <span className="block text-base sm:text-lg font-bold text-[#e5a044]">
                   {starredCount}
                 </span>
-                <span className="text-[11px] sm:text-xs font-semibold">Từ khó ⭐</span>
+                <span className="text-[11px] sm:text-xs font-semibold flex items-center gap-1">
+                  <Star className="w-3 h-3 fill-current text-[#e5a044]" /> Từ khó ⭐
+                </span>
               </button>
 
               {/* 4. Tất cả từ */}
@@ -1064,23 +1066,9 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                 <span className="block text-base sm:text-lg font-bold text-[#f5ede4]">
                   {allCount}
                 </span>
-                <span className="text-[11px] sm:text-xs font-semibold">Tất cả từ</span>
-              </button>
-
-              {/* 5. Đã thuộc */}
-              <button
-                type="button"
-                onClick={() => setFilterMode('mastered')}
-                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all cursor-pointer ${
-                  filterMode === 'mastered'
-                    ? 'bg-[#1a261d] border-[#5eb786] text-white shadow-md'
-                    : 'bg-[#191512] border-[#2e2621] text-[#8e837a] hover:text-[#d8cebe]'
-                }`}
-              >
-                <span className="block text-base sm:text-lg font-bold text-[#5eb786]">
-                  {masteredCount}
+                <span className="text-[11px] sm:text-xs font-semibold flex items-center gap-1">
+                  <BookOpen className="w-3 h-3 text-[#8e837a]" /> Tất cả từ
                 </span>
-                <span className="text-[11px] sm:text-xs font-semibold">Đã thuộc</span>
               </button>
             </div>
           );

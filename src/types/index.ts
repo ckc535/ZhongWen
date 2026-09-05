@@ -4,7 +4,8 @@ export interface Word {
   pinyin: string;
   vietnamese: string;
   hanViet?: string;
-  box: number; // 1 to 5 (Leitner SRS)
+  isMastered?: boolean; // true = Đã thuộc, false = Chưa thuộc
+  box?: number; // Tương thích dữ liệu cũ
   isStarred: boolean;
   hskLevel?: number;
   lesson?: string;
@@ -32,7 +33,8 @@ export interface UserProfile {
 }
 
 export interface UserWordProgress {
-  box: number; // 1 to 5
+  isMastered?: boolean; // true = Đã thuộc, false = Chưa thuộc
+  box?: number; // Tương thích dữ liệu cũ
   isStarred: boolean;
   reviewCount: number;
   correctCount: number;

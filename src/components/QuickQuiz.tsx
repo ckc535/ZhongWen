@@ -16,10 +16,10 @@ import {
 } from 'lucide-react';
 
 export const QuickQuiz: React.FC = () => {
-  const { words, dueWordsCount, starredWordsCount, hsk1WordsCount, customWordsCount, toggleStar, recordReview, settings } = useApp();
+  const { words, unmasteredWordsCount, starredWordsCount, hsk1WordsCount, customWordsCount, toggleStar, recordReview, settings } = useApp();
 
   // Quiz Config
-  const [filterMode, setFilterMode] = useState<'due' | 'starred' | 'all'>('due');
+  const [filterMode, setFilterMode] = useState<'unmastered' | 'starred' | 'all'>('unmastered');
   const [scopeFilter, setScopeFilter] = useState<'all' | 'hsk1' | 'custom'>('all');
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -46,13 +46,8 @@ export const QuickQuiz: React.FC = () => {
       pool = pool.filter(w => w.source === 'custom' || w.source === 'ai' || (!w.lesson?.includes('HSK 1') && w.source !== 'hsk1'));
     }
 
-    if (filterMode === 'due') {
-      const now = Date.now();
-      pool = pool.filter(w => {
-        if (!w.lastReviewed) return true;
-        const boxDays = [0, 1, 2, 4, 7, 14][w.box] || 1;
-        return now - w.lastReviewed >= boxDays * 24 * 60 * 60 * 1000;
-      });
+    if (filterMode === 'unmastered') {
+      pool = pool.filter(w => !w.isMastered);
     } else if (filterMode === 'starred') {
       pool = pool.filter(w => w.isStarred);
     }
@@ -508,14 +503,14 @@ export const QuickQuiz: React.FC = () => {
           </label>
           <div className="grid grid-cols-3 gap-2">
             <button
-              onClick={() => setFilterMode('due')}
+              onClick={() => setFilterMode('unmastered')}
               className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all ${
-                filterMode === 'due'
+                filterMode === 'unmastered'
                   ? 'bg-[#df5343] text-white border-[#df5343]'
                   : 'bg-[#27211d] text-[#8e837a] border-[#382f29]'
               }`}
             >
-              Chưa thuộc
+              Chưa thuộc ({unmasteredWordsCount})
             </button>
 
             <button

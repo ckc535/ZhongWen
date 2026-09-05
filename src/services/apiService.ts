@@ -344,6 +344,7 @@ export class ApiService {
     userId: string,
     payload: {
       wordId: string;
+      isMastered?: boolean;
       box?: number;
       isStarred?: boolean;
       reviewCount?: number;
@@ -356,6 +357,7 @@ export class ApiService {
     const rawProg = payload.progress || payload;
     const cleanProgress: Partial<UserWordProgress> = {};
 
+    if (rawProg.isMastered !== undefined) cleanProgress.isMastered = rawProg.isMastered;
     if (rawProg.box !== undefined) cleanProgress.box = rawProg.box;
     if (rawProg.isStarred !== undefined) cleanProgress.isStarred = rawProg.isStarred;
     if (rawProg.reviewCount !== undefined) cleanProgress.reviewCount = rawProg.reviewCount;
@@ -363,9 +365,23 @@ export class ApiService {
     if (rawProg.wrongCount !== undefined) cleanProgress.wrongCount = rawProg.wrongCount;
     if (rawProg.lastReviewed !== undefined) cleanProgress.lastReviewed = rawProg.lastReviewed;
 
-    // Use queue to batch rapid calls
-    ApiService.queueProgressUpdate(userId, payload.wordId, cleanProgress);
-    return true;
+    // Direct immediate save to API to guarantee instant persistence even if user refreshes immediately
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          wordId: payload.wordId,
+          progress: cleanProgress
+        })
+      });
+      return res.ok;
+    } catch (err) {
+      console.warn('[ApiService] Failed direct save, queuing update:', err);
+      ApiService.queueProgressUpdate(userId, payload.wordId, cleanProgress);
+      return false;
+    }
   }
 
   /**

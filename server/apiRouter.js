@@ -114,8 +114,12 @@ router.get('/data', async (req, res) => {
       if (!userProgress[item.userId]) {
         userProgress[item.userId] = {};
       }
+      const isMastered = item.isMastered !== undefined
+        ? Boolean(item.isMastered)
+        : ((item.box ?? 1) >= 5);
       userProgress[item.userId][item.wordId] = {
-        box: item.box ?? 1,
+        isMastered,
+        box: isMastered ? 5 : 1,
         isStarred: item.isStarred ?? false,
         reviewCount: item.reviewCount ?? 0,
         correctCount: item.correctCount ?? 0,
@@ -412,32 +416,50 @@ router.post('/progress', async (req, res) => {
       wordId,
       updatedAt: Date.now()
     };
-    if (p.box !== undefined) updateFields.box = p.box;
-    if (p.isStarred !== undefined) updateFields.isStarred = p.isStarred;
+    if (p.isMastered !== undefined) {
+      updateFields.isMastered = Boolean(p.isMastered);
+      updateFields.box = p.isMastered ? 5 : 1;
+    } else if (p.box !== undefined) {
+      updateFields.box = p.box;
+      updateFields.isMastered = p.box >= 5;
+    }
+    if (p.isStarred !== undefined) updateFields.isStarred = Boolean(p.isStarred);
     if (p.reviewCount !== undefined) updateFields.reviewCount = p.reviewCount;
     if (p.correctCount !== undefined) updateFields.correctCount = p.correctCount;
     if (p.wrongCount !== undefined) updateFields.wrongCount = p.wrongCount;
     if (p.lastReviewed !== undefined) updateFields.lastReviewed = p.lastReviewed;
 
+    const defaultFields = {
+      isMastered: false,
+      box: 1,
+      isStarred: false,
+      reviewCount: 0,
+      correctCount: 0,
+      wrongCount: 0,
+      lastReviewed: null
+    };
+    const setOnInsert = {};
+    for (const [key, val] of Object.entries(defaultFields)) {
+      if (updateFields[key] === undefined) {
+        setOnInsert[key] = val;
+      }
+    }
+
+    const updateDoc = { $set: updateFields };
+    if (Object.keys(setOnInsert).length > 0) {
+      updateDoc.$setOnInsert = setOnInsert;
+    }
+
     const { db } = await connectToDatabase();
     await db.collection('user_progress').updateOne(
       { userId, wordId },
-      {
-        $set: updateFields,
-        $setOnInsert: {
-          box: 1,
-          isStarred: false,
-          reviewCount: 0,
-          correctCount: 0,
-          wrongCount: 0,
-          lastReviewed: null
-        }
-      },
+      updateDoc,
       { upsert: true }
     );
 
     res.json({ success: true });
   } catch (err) {
+    console.error('[API /progress] Error:', err);
     res.status(500).json({ error: 'Failed to save progress', details: err.message });
   }
 });
@@ -454,6 +476,16 @@ router.post('/progress/batch', async (req, res) => {
     const progressCol = db.collection('user_progress');
     const now = Date.now();
 
+    const defaultFields = {
+      isMastered: false,
+      box: 1,
+      isStarred: false,
+      reviewCount: 0,
+      correctCount: 0,
+      wrongCount: 0,
+      lastReviewed: null
+    };
+
     const bulkOps = updates.map(item => {
       const p = item.progress || item;
       const updateFields = {
@@ -461,39 +493,44 @@ router.post('/progress/batch', async (req, res) => {
         wordId: item.wordId,
         updatedAt: now
       };
-      if (p.box !== undefined) updateFields.box = p.box;
-      if (p.isStarred !== undefined) updateFields.isStarred = p.isStarred;
+      if (p.isMastered !== undefined) {
+        updateFields.isMastered = Boolean(p.isMastered);
+        updateFields.box = p.isMastered ? 5 : 1;
+      } else if (p.box !== undefined) {
+        updateFields.box = p.box;
+        updateFields.isMastered = p.box >= 5;
+      }
+      if (p.isStarred !== undefined) updateFields.isStarred = Boolean(p.isStarred);
       if (p.reviewCount !== undefined) updateFields.reviewCount = p.reviewCount;
       if (p.correctCount !== undefined) updateFields.correctCount = p.correctCount;
       if (p.wrongCount !== undefined) updateFields.wrongCount = p.wrongCount;
       if (p.lastReviewed !== undefined) updateFields.lastReviewed = p.lastReviewed;
 
+      const setOnInsert = {};
+      for (const [key, val] of Object.entries(defaultFields)) {
+        if (updateFields[key] === undefined) {
+          setOnInsert[key] = val;
+        }
+      }
+
+      const updateDoc = { $set: updateFields };
+      if (Object.keys(setOnInsert).length > 0) {
+        updateDoc.$setOnInsert = setOnInsert;
+      }
+
       return {
         updateOne: {
           filter: { userId, wordId: item.wordId },
-          update: {
-            $set: updateFields,
-            $setOnInsert: {
-              box: 1,
-              isStarred: false,
-              reviewCount: 0,
-              correctCount: 0,
-              wrongCount: 0,
-              lastReviewed: null
-            }
-          },
+          update: updateDoc,
           upsert: true
         }
       };
     });
 
     const result = await progressCol.bulkWrite(bulkOps, { ordered: false });
-    res.json({
-      success: true,
-      modifiedCount: result.modifiedCount,
-      upsertedCount: result.upsertedCount
-    });
+    res.json({ success: true, count: result.modifiedCount + result.upsertedCount });
   } catch (err) {
+    console.error('[API /progress/batch] Error:', err);
     res.status(500).json({ error: 'Failed to batch save progress', details: err.message });
   }
 });
