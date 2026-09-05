@@ -17,7 +17,9 @@ import {
   Flame,
   Play,
   Sparkles,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 const AVATARS = ['🐼', '🐉', '🐯', '🦊', '🐰', '🎋', '🏮', '🌸', '🍵', '🏯'];
@@ -58,6 +60,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isRenaming, setIsRenaming] = useState<boolean>(false);
   const [renameName, setRenameName] = useState<string>(currentUser?.name || '');
   const [renameAvatar, setRenameAvatar] = useState<string>(currentUser?.avatar || '🐼');
+  const settingsAvatarScrollRef = React.useRef<HTMLDivElement>(null);
 
   const [importStatus, setImportStatus] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -240,8 +243,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {isRenaming && (
             <div className="p-3.5 rounded-2xl bg-[#1f1a17] border border-[#3e3229] space-y-2.5">
               <div>
-                <label className="block text-[10px] text-[#8e837a] mb-1">Chọn biểu tượng:</label>
-                <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] text-[#8e837a]">Chọn biểu tượng:</label>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => settingsAvatarScrollRef.current?.scrollBy({ left: -100, behavior: 'smooth' })}
+                      className="p-0.5 rounded-lg bg-[#27211d] hover:bg-[#322a25] text-[#8e837a] hover:text-[#d8cebe] border border-[#382f29] transition-colors cursor-pointer"
+                      title="Cuộn sang trái"
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => settingsAvatarScrollRef.current?.scrollBy({ left: 100, behavior: 'smooth' })}
+                      className="p-0.5 rounded-lg bg-[#27211d] hover:bg-[#322a25] text-[#8e837a] hover:text-[#d8cebe] border border-[#382f29] transition-colors cursor-pointer"
+                      title="Cuộn sang phải"
+                    >
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+                <div
+                  ref={settingsAvatarScrollRef}
+                  onWheel={(e) => { if (e.deltaY !== 0) e.currentTarget.scrollLeft += e.deltaY * 0.8; }}
+                  className="flex items-center gap-1 overflow-x-auto pb-2 pt-0.5 custom-scrollbar-x"
+                >
                   {AVATARS.map((av) => (
                     <button
                       key={av}

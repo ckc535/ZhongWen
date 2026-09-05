@@ -23,7 +23,9 @@ import {
   Sliders,
   Terminal,
   Cpu,
-  Edit3
+  Edit3,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 interface AIReadingPassageProps {
@@ -91,6 +93,7 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
   // Length Configuration (Ngắn / Vừa / Dài / Tự chỉnh)
   const [lengthMode, setLengthMode] = useState<'short' | 'medium' | 'long' | 'custom'>('medium');
   const [customWordCount, setCustomWordCount] = useState<number>(60);
+  const topicScrollRef = React.useRef<HTMLDivElement>(null);
 
   // Streaming generation states
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
@@ -561,10 +564,39 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
 
             {/* 3. CHỦ ĐỀ GỢI Ý */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-[#8e837a]">
-                Chọn chủ đề:
-              </label>
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar text-xs">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-[#8e837a]">
+                  Chọn chủ đề:
+                </label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => topicScrollRef.current?.scrollBy({ left: -160, behavior: 'smooth' })}
+                    className="p-1 rounded-lg bg-[#161311] hover:bg-[#27211d] text-[#8e837a] hover:text-[#d8cebe] border border-[#2e2621] transition-colors cursor-pointer"
+                    title="Cuộn sang trái"
+                  >
+                    <ChevronLeft className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => topicScrollRef.current?.scrollBy({ left: 160, behavior: 'smooth' })}
+                    className="p-1 rounded-lg bg-[#161311] hover:bg-[#27211d] text-[#8e837a] hover:text-[#d8cebe] border border-[#2e2621] transition-colors cursor-pointer"
+                    title="Cuộn sang phải"
+                  >
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                ref={topicScrollRef}
+                onWheel={(e) => {
+                  if (e.deltaY !== 0) {
+                    e.currentTarget.scrollLeft += e.deltaY * 0.8;
+                  }
+                }}
+                className="flex items-center gap-1.5 overflow-x-auto pt-0.5 pb-2.5 custom-scrollbar-x text-xs"
+              >
                 {TOPICS.map((topic) => (
                   <button
                     key={topic}
@@ -573,7 +605,7 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
                       setSelectedTopic(topic);
                       setCustomTopic('');
                     }}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-medium border transition-all whitespace-nowrap cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-medium border transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                       selectedTopic === topic && !customTopic
                         ? 'bg-[#33261a] text-[#e5a044] border-[#553c24]'
                         : 'bg-[#161311] text-[#8e837a] border-[#2e2621]'

@@ -10,7 +10,9 @@ import {
   X,
   Flame,
   BookOpen,
-  Sparkles
+  Sparkles,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 const AVATARS = ['🐼', '🐉', '🐯', '🦊', '🐰', '🎋', '🏮', '🌸', '🍵', '🏯'];
@@ -35,9 +37,12 @@ export const UserSelectionModal: React.FC<UserSelectionModalProps> = ({
     deleteUserProfile
   } = useApp();
 
-  const [isCreatingNew, setIsCreatingNew] = useState<boolean>(users.length === 0);
+  const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
   const [newUserName, setNewUserName] = useState<string>('');
-  const [selectedAvatar, setSelectedAvatar] = useState<string>('🐼');
+  const [selectedAvatar, setSelectedAvatar] = useState<string>(AVATARS[0]);
+
+  const createAvatarScrollRef = React.useRef<HTMLDivElement>(null);
+  const renameAvatarScrollRef = React.useRef<HTMLDivElement>(null);
 
   // Rename state
   const [isRenaming, setIsRenaming] = useState<boolean>(false);
@@ -118,8 +123,32 @@ export const UserSelectionModal: React.FC<UserSelectionModalProps> = ({
             </h3>
 
             <div>
-              <label className="block text-[11px] text-[#8e837a] mb-1">Chọn biểu tượng:</label>
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] text-[#8e837a]">Chọn biểu tượng:</label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => renameAvatarScrollRef.current?.scrollBy({ left: -120, behavior: 'smooth' })}
+                    className="p-0.5 rounded-lg bg-[#27211d] hover:bg-[#322a25] text-[#8e837a] hover:text-[#d8cebe] border border-[#382f29] transition-colors cursor-pointer"
+                    title="Cuộn sang trái"
+                  >
+                    <ChevronLeft className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => renameAvatarScrollRef.current?.scrollBy({ left: 120, behavior: 'smooth' })}
+                    className="p-0.5 rounded-lg bg-[#27211d] hover:bg-[#322a25] text-[#8e837a] hover:text-[#d8cebe] border border-[#382f29] transition-colors cursor-pointer"
+                    title="Cuộn sang phải"
+                  >
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              <div
+                ref={renameAvatarScrollRef}
+                onWheel={(e) => { if (e.deltaY !== 0) e.currentTarget.scrollLeft += e.deltaY * 0.8; }}
+                className="flex items-center gap-1.5 overflow-x-auto pb-2 pt-0.5 custom-scrollbar-x"
+              >
                 {AVATARS.map((av) => (
                   <button
                     key={av}
@@ -265,8 +294,32 @@ export const UserSelectionModal: React.FC<UserSelectionModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] text-[#8e837a] mb-1">Chọn linh vật đại diện:</label>
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[10px] text-[#8e837a]">Chọn linh vật đại diện:</label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => createAvatarScrollRef.current?.scrollBy({ left: -120, behavior: 'smooth' })}
+                        className="p-0.5 rounded-lg bg-[#27211d] hover:bg-[#322a25] text-[#8e837a] hover:text-[#d8cebe] border border-[#382f29] transition-colors cursor-pointer"
+                        title="Cuộn sang trái"
+                      >
+                        <ChevronLeft className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => createAvatarScrollRef.current?.scrollBy({ left: 120, behavior: 'smooth' })}
+                        className="p-0.5 rounded-lg bg-[#27211d] hover:bg-[#322a25] text-[#8e837a] hover:text-[#d8cebe] border border-[#382f29] transition-colors cursor-pointer"
+                        title="Cuộn sang phải"
+                      >
+                        <ChevronRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    ref={createAvatarScrollRef}
+                    onWheel={(e) => { if (e.deltaY !== 0) e.currentTarget.scrollLeft += e.deltaY * 0.8; }}
+                    className="flex items-center gap-1.5 overflow-x-auto pb-2 pt-0.5 custom-scrollbar-x"
+                  >
                     {AVATARS.map((av) => (
                       <button
                         key={av}

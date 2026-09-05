@@ -386,7 +386,7 @@ export const StrokeOrderCanvas: React.FC<StrokeOrderCanvasProps> = ({ initialCha
             onMouseUp={handleCarouselMouseUp}
             onMouseLeave={handleCarouselMouseUp}
             onWheel={handleCarouselWheel}
-            className="flex items-center gap-1.5 overflow-x-auto py-1 no-scrollbar select-none cursor-grab active:cursor-grabbing touch-pan-x"
+            className="flex items-center gap-1.5 overflow-x-auto pt-1 pb-2.5 custom-scrollbar-x select-none cursor-grab active:cursor-grabbing touch-pan-x"
             style={{ WebkitOverflowScrolling: 'touch' }}
           >
             {words.slice(0, 40).map((w, idx) => {

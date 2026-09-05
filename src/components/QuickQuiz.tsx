@@ -170,9 +170,21 @@ export const QuickQuiz: React.FC = () => {
   const currentQ = questions[currentIndex];
 
   useEffect(() => {
-    if (isPlaying && currentQ?.audioText && !isFinished) {
-      handlePlayAudio(currentQ.audioText);
+    // Dừng âm thanh đang phát khi chuyển câu hỏi
+    tts.stop();
+    setIsPlayingAudio(false);
+
+    // Chỉ tự động phát âm đối với dạng bài nghe 'audio-to-hanzi'.
+    // Với các bài nhìn chữ (hanzi-to-vi, hanzi-to-pinyin): KHÔNG tự động đọc, người dùng bấm vào biểu tượng loa mới phát âm.
+    if (isPlaying && currentQ && !isFinished) {
+      if (currentQ.type === 'audio-to-hanzi' && currentQ.audioText) {
+        handlePlayAudio(currentQ.audioText);
+      }
     }
+
+    return () => {
+      tts.stop();
+    };
   }, [currentIndex, isPlaying, isFinished]);
 
   const handleSelectOption = (option: string) => {

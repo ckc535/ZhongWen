@@ -66,6 +66,38 @@ body {
   scrollbar-width: none !important;
 }
 
+/* Sleek theme-blended horizontal scrollbar for PC & Mobile */
+.custom-scrollbar-x {
+  scrollbar-width: thin;
+  scrollbar-color: #382f29 #191512;
+  -webkit-overflow-scrolling: touch;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar {
+  height: 6px;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-track {
+  background: #191512;
+  border-radius: 9999px;
+  margin: 0 4px;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-thumb {
+  background: #382f29;
+  border-radius: 9999px;
+  border: 1px solid #231b15;
+  transition: background 0.2s ease;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-thumb:hover {
+  background: #554439;
+}
+
+.custom-scrollbar-x::-webkit-scrollbar-thumb:active {
+  background: #735a4a;
+}
+
 /* Traditional Tian Zi Ge Grid */
 .tian-zi-ge {
   background-image: 
