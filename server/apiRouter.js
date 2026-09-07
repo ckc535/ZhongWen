@@ -535,20 +535,42 @@ router.post('/progress/batch', async (req, res) => {
   }
 });
 
-// 14. Update User Streak
+// 14. Update User Streak & Activity Date
 router.put('/users/:id/streak', async (req, res) => {
   try {
     const { id } = req.params;
-    const { streakDays, lastActiveDate } = req.body;
+    const { streakDays, lastActiveDate, lastActiveTimestamp, activeDates, totalActiveDays } = req.body;
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const parseSeconds = (val) => {
+      if (!val) return nowSeconds;
+      const num = Number(val);
+      return num > 1e11 ? Math.floor(num / 1000) : Math.floor(num);
+    };
 
     const updates = {};
-    if (streakDays !== undefined) updates.streakDays = streakDays;
-    if (lastActiveDate !== undefined) updates.lastActiveDate = lastActiveDate;
+    if (streakDays !== undefined) updates.streakDays = Number(streakDays);
+    if (lastActiveDate !== undefined) updates.lastActiveDate = String(lastActiveDate);
+    updates.lastActiveTimestamp = parseSeconds(lastActiveTimestamp);
+    updates.updatedAt = nowSeconds;
+
+    const mongoUpdates = { $set: updates };
+
+    // If activeDates array is provided or lastActiveDate is provided, add to activeDates set
+    if (Array.isArray(activeDates)) {
+      updates.activeDates = activeDates;
+    } else if (lastActiveDate) {
+      mongoUpdates.$addToSet = { activeDates: String(lastActiveDate) };
+    }
+
+    if (totalActiveDays !== undefined) {
+      updates.totalActiveDays = Number(totalActiveDays);
+    }
 
     const { db } = await connectToDatabase();
     const result = await db.collection('users').findOneAndUpdate(
       { id },
-      { $set: updates },
+      mongoUpdates,
       { returnDocument: 'after', projection: { _id: 0 } }
     );
 

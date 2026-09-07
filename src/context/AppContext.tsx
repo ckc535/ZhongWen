@@ -19,6 +19,8 @@ interface AppContextType {
   // User management
   currentUser: UserProfile | null;
   users: UserProfile[];
+  effectiveStreak: number;
+  isStudiedToday: boolean;
   setCurrentUser: (user: UserProfile | null) => void;
   createNewUser: (name: string, avatar?: string) => Promise<UserProfile | null>;
   renameCurrentUser: (newName: string, avatar?: string) => Promise<UserProfile | null>;
@@ -68,12 +70,24 @@ export const getLocalDateString = (d: Date = new Date()): string => {
 
 export const getDaysDifference = (dateStr1: string, dateStr2: string): number => {
   if (!dateStr1 || !dateStr2) return -1;
-  const [y1, m1, d1] = dateStr1.split('-').map(Number);
-  const [y2, m2, d2] = dateStr2.split('-').map(Number);
+  const clean1 = dateStr1.split('T')[0];
+  const clean2 = dateStr2.split('T')[0];
+  const [y1, m1, d1] = clean1.split('-').map(Number);
+  const [y2, m2, d2] = clean2.split('-').map(Number);
   if (isNaN(y1) || isNaN(y2)) return -1;
   const utc1 = Date.UTC(y1, m1 - 1, d1);
   const utc2 = Date.UTC(y2, m2 - 1, d2);
   return Math.floor((utc2 - utc1) / (1000 * 60 * 60 * 24));
+};
+
+export const getEffectiveStreak = (user: UserProfile | null): number => {
+  if (!user || !user.lastActiveDate) return 0;
+  const todayStr = getLocalDateString();
+  const diff = getDaysDifference(user.lastActiveDate, todayStr);
+  if (diff <= 1 && diff >= 0) {
+    return user.streakDays || 1;
+  }
+  return 0;
 };
 
 const STORAGE_KEYS = {
@@ -526,6 +540,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ApiService.updateUserProgress(activeUserId, { wordId, isStarred: newStarred });
   }, [activeUserId, currentUserProgressMap]);
 
+  // Record learning activity & automatically calculate/update consecutive day streak
+  const recordActivity = useCallback(async (userToUpdate?: UserProfile | null) => {
+    const user = userToUpdate || currentUser;
+    if (!user) return;
+
+    const todayStr = getLocalDateString();
+    const lastActive = user.lastActiveDate || '';
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    // If already recorded activity today, make sure timestamp is updated in DB
+    if (lastActive === todayStr) {
+      ApiService.updateUserStats(user.id, {
+        lastActiveDate: todayStr,
+        lastActiveTimestamp: nowSeconds
+      });
+      return;
+    }
+
+    let newStreak = 1;
+    if (lastActive) {
+      const diff = getDaysDifference(lastActive, todayStr);
+      if (diff === 1) {
+        // Consecutive day! Increment streak by 1
+        newStreak = (user.streakDays || 0) + 1;
+      } else if (diff === 0) {
+        newStreak = user.streakDays || 1;
+      } else {
+        // Missed one or more days -> restart at 1
+        newStreak = 1;
+      }
+    }
+
+    const currentDates = Array.isArray(user.activeDates) ? user.activeDates : (user.lastActiveDate ? [user.lastActiveDate] : []);
+    const newActiveDates = Array.from(new Set([...currentDates, todayStr]));
+
+    const updatedUser: UserProfile = {
+      ...user,
+      streakDays: newStreak,
+      lastActiveDate: todayStr,
+      lastActiveTimestamp: nowSeconds,
+      activeDates: newActiveDates,
+      totalActiveDays: newActiveDates.length
+    };
+
+    setCurrentUserState(updatedUser);
+    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
+
+    // Update in backend MongoDB
+    await ApiService.updateUserStats(user.id, {
+      streakDays: newStreak,
+      lastActiveDate: todayStr,
+      lastActiveTimestamp: nowSeconds,
+      activeDates: newActiveDates,
+      totalActiveDays: newActiveDates.length
+    });
+  }, [currentUser]);
+
   // Toggle Word Mastered (Đã thuộc <-> Chưa thuộc) specifically for current user
   const toggleWordMastered = useCallback(async (wordId: string) => {
     const currentProg = currentUserProgressMap[wordId];
@@ -568,50 +639,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isMastered: newMastered,
       box: newMastered ? 5 : 1
     });
-  }, [activeUserId, currentUserProgressMap]);
 
-  // Record learning activity & automatically calculate/update consecutive day streak
-  const recordActivity = useCallback(async (userToUpdate?: UserProfile | null) => {
-    const user = userToUpdate || currentUser;
-    if (!user) return;
-
-    const todayStr = getLocalDateString();
-    const lastActive = user.lastActiveDate || '';
-
-    // If already recorded activity today, streak is already counted
-    if (lastActive === todayStr) {
-      return;
-    }
-
-    let newStreak = 1;
-    if (lastActive) {
-      const diff = getDaysDifference(lastActive, todayStr);
-      if (diff === 1) {
-        // Consecutive day! Increment streak by 1
-        newStreak = (user.streakDays || 1) + 1;
-      } else if (diff === 0) {
-        newStreak = user.streakDays || 1;
-      } else {
-        // Missed one or more days -> restart at 1
-        newStreak = 1;
-      }
-    }
-
-    const updatedUser: UserProfile = {
-      ...user,
-      streakDays: newStreak,
-      lastActiveDate: todayStr
-    };
-
-    setCurrentUserState(updatedUser);
-    setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
-
-    // Update in backend MongoDB
-    ApiService.updateUserStats(user.id, {
-      streakDays: newStreak,
-      lastActiveDate: todayStr
-    });
-  }, [currentUser]);
+    // 4. Ghi nhận hoạt động học tập & cập nhật chuỗi ngày học streak
+    recordActivity();
+  }, [activeUserId, currentUserProgressMap, recordActivity]);
 
   // Record Review Result (Đã nhớ -> Đã thuộc, Chưa nhớ -> Chưa thuộc)
   const recordReview = useCallback((wordId: string, remembered: boolean) => {
@@ -710,13 +741,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  const todayStr = getLocalDateString();
+  const isStudiedToday = useMemo(() => {
+    return currentUser?.lastActiveDate === todayStr;
+  }, [currentUser?.lastActiveDate, todayStr]);
+
+  const effectiveStreak = useMemo(() => {
+    return getEffectiveStreak(currentUser);
+  }, [currentUser]);
+
   // Study Stats for Header
   const stats: StudyStats = useMemo(() => ({
-    streakDays: currentUser?.streakDays || 1,
-    lastActiveDate: currentUser?.lastActiveDate || new Date().toISOString().split('T')[0],
+    streakDays: effectiveStreak,
+    lastActiveDate: currentUser?.lastActiveDate || todayStr,
     totalReviewsToday: 0,
     masteredCount: masteredWordsCount
-  }), [currentUser, masteredWordsCount]);
+  }), [effectiveStreak, currentUser?.lastActiveDate, todayStr, masteredWordsCount]);
 
   return (
     <AppContext.Provider
@@ -732,6 +772,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         currentUser,
         users,
+        effectiveStreak,
+        isStudiedToday,
         setCurrentUser,
         createNewUser,
         renameCurrentUser,

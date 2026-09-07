@@ -14,6 +14,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
     totalWordsCount,
     masteredWordsCount,
     currentUser,
+    effectiveStreak,
+    isStudiedToday,
     activeTab,
     setActiveTab,
     settings
@@ -100,9 +102,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
               <span className="max-w-[70px] sm:max-w-[100px] truncate text-[11px] sm:text-xs">
                 {currentUser?.name || 'Chọn User'}
               </span>
-              <span className="text-[10px] text-[#e5a044] font-mono font-bold flex items-center gap-0.5">
-                <Flame className="w-2.5 h-2.5 sm:w-3 sm:h-3 fill-current" />
-                {currentUser?.streakDays || 1}d
+              <span className="text-[10px] text-[#e5a044] font-mono font-bold flex items-center gap-0.5" title={isStudiedToday ? 'Đã học hôm nay' : 'Chưa học hôm nay'}>
+                <Flame className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isStudiedToday ? 'fill-[#df5343] text-[#df5343]' : 'text-[#8e837a]'}`} />
+                {effectiveStreak}d
               </span>
             </button>
           )}
@@ -172,12 +174,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
         <div className="p-2 sm:p-3.5 rounded-xl sm:rounded-2xl bg-[#1f1a17] border border-[#2e2621] text-center sm:text-left">
           <div className="flex items-center justify-center sm:justify-between">
             <span className="text-base sm:text-2xl md:text-3xl font-black text-[#e5a044]">
-              {currentUser?.streakDays || 1} 🔥
+              {effectiveStreak} 🔥
             </span>
-            <Flame className="w-3.5 h-3.5 text-[#df5343] hidden sm:block" />
+            <Flame className={`w-3.5 h-3.5 hidden sm:block ${isStudiedToday ? 'text-[#df5343] fill-current' : 'text-[#6b625b]'}`} />
           </div>
-          <p className="text-[10px] sm:text-xs text-[#8e837a] font-medium mt-0.5 truncate">
-            Chuỗi ngày
+          <p className="text-[10px] sm:text-xs text-[#8e837a] font-medium mt-0.5 truncate" title={isStudiedToday ? 'Đã hoàn thành mục tiêu học hôm nay' : 'Chưa học hôm nay'}>
+            {isStudiedToday ? 'Đã học hôm nay' : 'Chuỗi ngày'}
           </p>
         </div>
       </div>

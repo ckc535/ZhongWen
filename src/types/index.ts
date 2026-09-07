@@ -28,7 +28,10 @@ export interface UserProfile {
   name: string;
   avatar: string; // Emoji avatar e.g. 🐼, 🐉, 🐯, 🦊, 🐰, 🎋
   streakDays: number;
-  lastActiveDate: string;
+  lastActiveDate: string; // Định dạng YYYY-MM-DD (ngày hoạt động gần nhất)
+  lastActiveTimestamp?: number; // Timestamp chính xác của lần học gần nhất
+  activeDates?: string[]; // Danh sách các ngày đã học (lịch sử chuyên cần)
+  totalActiveDays?: number; // Tổng số ngày đã học từ trước đến nay
   createdAt: number;
 }
 

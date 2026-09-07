@@ -385,11 +385,17 @@ export class ApiService {
   }
 
   /**
-   * Update streak stats
+   * Update streak stats & activity date
    */
   public static async updateUserStats(
     userId: string,
-    stats: { streakDays?: number; lastActiveDate?: string }
+    stats: {
+      streakDays?: number;
+      lastActiveDate?: string;
+      lastActiveTimestamp?: number;
+      activeDates?: string[];
+      totalActiveDays?: number;
+    }
   ): Promise<boolean> {
     try {
       const res = await ApiService.fetchWithRetry(`${API_BASE}/users/${userId}/streak`, {
