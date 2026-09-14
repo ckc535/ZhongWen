@@ -54,10 +54,12 @@ export interface DatabaseSchema {
 export type StudyDirection = 'hanzi-to-meaning' | 'meaning-to-hanzi' | 'audio-to-hanzi';
 export type StudyFilter = 'due' | 'unmastered' | 'all' | 'starred' | 'mastered';
 
+export type QuizQuestionType = 'hanzi-to-vi' | 'vi-to-hanzi' | 'audio-to-hanzi' | 'hanzi-to-pinyin';
+
 export interface QuizQuestion {
   id: string;
   word: Word;
-  type: 'hanzi-to-vi' | 'vi-to-hanzi' | 'audio-to-hanzi' | 'hanzi-to-pinyin';
+  type: QuizQuestionType;
   question: string;
   audioText?: string;
   correctAnswer: string;

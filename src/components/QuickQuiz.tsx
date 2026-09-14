@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { Word, QuizQuestion } from '../types';
+import { Word, QuizQuestion, QuizQuestionType } from '../types';
 import { tts } from '../services/ttsService';
 import { soundEffects } from '../services/soundEffects';
 import confetti from 'canvas-confetti';
@@ -12,17 +12,112 @@ import {
   Flame,
   Star,
   ArrowRight,
-  BookOpen
+  BookOpen,
+  Check
 } from 'lucide-react';
 
+interface QuizTypeOption {
+  id: QuizQuestionType;
+  label: string;
+  subLabel: string;
+  icon: string;
+}
+
+const QUIZ_TYPE_OPTIONS: QuizTypeOption[] = [
+  {
+    id: 'hanzi-to-vi',
+    label: 'Chữ ➔ Nghĩa',
+    subLabel: 'Nhìn chữ Hán chọn nghĩa tiếng Việt',
+    icon: '🔤'
+  },
+  {
+    id: 'vi-to-hanzi',
+    label: 'Nghĩa ➔ Chữ',
+    subLabel: 'Nhìn nghĩa tiếng Việt chọn chữ Hán',
+    icon: '📝'
+  },
+  {
+    id: 'audio-to-hanzi',
+    label: 'Nghe ➔ Chữ',
+    subLabel: 'Nghe phát âm chọn chữ Hán đúng',
+    icon: '🔊'
+  },
+  {
+    id: 'hanzi-to-pinyin',
+    label: 'Chữ ➔ Pinyin',
+    subLabel: 'Nhìn chữ Hán chọn phiên âm Pinyin',
+    icon: '✨'
+  }
+];
+
 export const QuickQuiz: React.FC = () => {
-  const { words, unmasteredWordsCount, starredWordsCount, hsk1WordsCount, customWordsCount, toggleStar, recordReview, settings } = useApp();
+  const { words, unmasteredWordsCount, masteredWordsCount, starredWordsCount, hsk1WordsCount, customWordsCount, toggleStar, recordReview, settings } = useApp();
 
   // Quiz Config
-  const [filterMode, setFilterMode] = useState<'unmastered' | 'starred' | 'all'>('unmastered');
+  const [filterMode, setFilterMode] = useState<'unmastered' | 'mastered' | 'starred' | 'all'>('unmastered');
   const [scopeFilter, setScopeFilter] = useState<'all' | 'hsk1' | 'custom'>('all');
+  const [selectedTypes, setSelectedTypes] = useState<QuizQuestionType[]>(() => {
+    try {
+      const saved = localStorage.getItem('zhongwen_quiz_selected_types');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const valid = parsed.filter((t: any) =>
+            ['hanzi-to-vi', 'vi-to-hanzi', 'audio-to-hanzi', 'hanzi-to-pinyin'].includes(t)
+          );
+          if (valid.length > 0) return valid;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return ['hanzi-to-vi', 'vi-to-hanzi', 'audio-to-hanzi', 'hanzi-to-pinyin'];
+  });
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+
+  // Sync selected question types to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('zhongwen_quiz_selected_types', JSON.stringify(selectedTypes));
+    } catch {
+      // ignore
+    }
+  }, [selectedTypes]);
+
+  // Dynamic scoped word list
+  const scopedWords = useMemo(() => {
+    if (scopeFilter === 'hsk1') {
+      return words.filter(w => w.source === 'hsk1' || w.lesson?.includes('HSK 1'));
+    }
+    if (scopeFilter === 'custom') {
+      return words.filter(w => w.source === 'custom' || w.source === 'ai' || (!w.lesson?.includes('HSK 1') && w.source !== 'hsk1'));
+    }
+    return words;
+  }, [words, scopeFilter]);
+
+  const scopedUnmasteredCount = useMemo(() => scopedWords.filter(w => !w.isMastered).length, [scopedWords]);
+  const scopedMasteredCount = useMemo(() => scopedWords.filter(w => w.isMastered).length, [scopedWords]);
+  const scopedStarredCount = useMemo(() => scopedWords.filter(w => w.isStarred).length, [scopedWords]);
+
+  const handleToggleType = (typeId: QuizQuestionType) => {
+    setSelectedTypes(prev => {
+      if (prev.includes(typeId)) {
+        if (prev.length <= 1) {
+          return prev; // Giữ tối thiểu 1 loại bài kiểm tra
+        }
+        return prev.filter(t => t !== typeId);
+      } else {
+        return [...prev, typeId];
+      }
+    });
+    soundEffects.playClick();
+  };
+
+  const handleSelectAllTypes = () => {
+    setSelectedTypes(['hanzi-to-vi', 'vi-to-hanzi', 'audio-to-hanzi', 'hanzi-to-pinyin']);
+    soundEffects.playClick();
+  };
 
   // Active Quiz State
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -48,6 +143,8 @@ export const QuickQuiz: React.FC = () => {
 
     if (filterMode === 'unmastered') {
       pool = pool.filter(w => !w.isMastered);
+    } else if (filterMode === 'mastered') {
+      pool = pool.filter(w => w.isMastered);
     } else if (filterMode === 'starred') {
       pool = pool.filter(w => w.isStarred);
     }
@@ -64,14 +161,23 @@ export const QuickQuiz: React.FC = () => {
     const shuffledWords = poolCopy.slice(0, questionCount);
     const allWords = [...words];
 
+    const activeTypes = selectedTypes.length > 0
+      ? selectedTypes
+      : (['hanzi-to-vi', 'vi-to-hanzi', 'audio-to-hanzi', 'hanzi-to-pinyin'] as QuizQuestionType[]);
+
+    // Tạo danh sách câu hỏi phân bổ cân bằng và ngẫu nhiên theo các dạng bài đã chọn
+    const typeSequence: QuizQuestionType[] = [];
+    while (typeSequence.length < shuffledWords.length) {
+      const batch = [...activeTypes];
+      for (let i = batch.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [batch[i], batch[j]] = [batch[j], batch[i]];
+      }
+      typeSequence.push(...batch);
+    }
+
     return shuffledWords.map((targetWord, idx) => {
-      const types: Array<'hanzi-to-vi' | 'vi-to-hanzi' | 'audio-to-hanzi' | 'hanzi-to-pinyin'> = [
-        'hanzi-to-vi',
-        'vi-to-hanzi',
-        'audio-to-hanzi',
-        'hanzi-to-pinyin'
-      ];
-      const qType = types[Math.floor(Math.random() * types.length)];
+      const qType = typeSequence[idx] || activeTypes[0];
 
       let question = '';
       let correctAnswer = '';
@@ -496,45 +602,109 @@ export const QuickQuiz: React.FC = () => {
           </div>
         </div>
 
-        {/* Filter Pills (Chưa thuộc / Khó / Tất cả) */}
+        {/* Filter Pills (Chưa thuộc / Đã thuộc / Khó / Tất cả) */}
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold text-[#8e837a]">
             Trạng thái chữ:
           </label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
-              onClick={() => setFilterMode('unmastered')}
-              className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all ${
+              onClick={() => { setFilterMode('unmastered'); soundEffects.playClick(); }}
+              className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
                 filterMode === 'unmastered'
                   ? 'bg-[#df5343] text-white border-[#df5343]'
-                  : 'bg-[#27211d] text-[#8e837a] border-[#382f29]'
+                  : 'bg-[#27211d] text-[#8e837a] border-[#382f29] hover:text-[#d8cebe]'
               }`}
             >
-              Chưa thuộc ({unmasteredWordsCount})
+              Chưa thuộc ({scopedUnmasteredCount})
             </button>
 
             <button
-              onClick={() => setFilterMode('starred')}
-              className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all flex items-center justify-center gap-1 ${
+              onClick={() => { setFilterMode('mastered'); soundEffects.playClick(); }}
+              className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                filterMode === 'mastered'
+                  ? 'bg-[#df5343] text-white border-[#df5343]'
+                  : 'bg-[#27211d] text-[#8e837a] border-[#382f29] hover:text-[#d8cebe]'
+              }`}
+            >
+              Đã thuộc ({scopedMasteredCount})
+            </button>
+
+            <button
+              onClick={() => { setFilterMode('starred'); soundEffects.playClick(); }}
+              className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                 filterMode === 'starred'
                   ? 'bg-[#df5343] text-white border-[#df5343]'
-                  : 'bg-[#27211d] text-[#8e837a] border-[#382f29]'
+                  : 'bg-[#27211d] text-[#8e837a] border-[#382f29] hover:text-[#d8cebe]'
               }`}
             >
               <Star className="w-3.5 h-3.5 fill-current" />
-              <span>Khó ({starredWordsCount})</span>
+              <span>Khó ({scopedStarredCount})</span>
             </button>
 
             <button
-              onClick={() => setFilterMode('all')}
-              className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all ${
+              onClick={() => { setFilterMode('all'); soundEffects.playClick(); }}
+              className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
                 filterMode === 'all'
                   ? 'bg-[#df5343] text-white border-[#df5343]'
-                  : 'bg-[#27211d] text-[#8e837a] border-[#382f29]'
+                  : 'bg-[#27211d] text-[#8e837a] border-[#382f29] hover:text-[#d8cebe]'
               }`}
             >
               Tất cả
             </button>
+          </div>
+        </div>
+
+        {/* Quiz Question Types Multi-Select Option */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-semibold text-[#8e837a]">
+              Dạng bài kiểm tra:
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-[#8e837a]">
+                Đã chọn <span className="text-[#e5a044] font-semibold">{selectedTypes.length}/4</span>
+              </span>
+              {selectedTypes.length < QUIZ_TYPE_OPTIONS.length ? (
+                <button
+                  type="button"
+                  onClick={handleSelectAllTypes}
+                  className="text-[11px] text-[#e5a044] hover:underline font-semibold cursor-pointer"
+                >
+                  Chọn tất cả
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {QUIZ_TYPE_OPTIONS.map(opt => {
+              const isSelected = selectedTypes.includes(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => handleToggleType(opt.id)}
+                  title={opt.subLabel}
+                  className={`py-2.5 px-2.5 rounded-xl text-xs font-semibold border transition-all flex items-center justify-between gap-1.5 cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#df5343] text-white border-[#df5343] shadow-sm'
+                      : 'bg-[#27211d] text-[#8e837a] border-[#382f29] hover:text-[#d8cebe] hover:bg-[#322a25]'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 truncate">
+                    <span>{opt.icon}</span>
+                    <span className="truncate">{opt.label}</span>
+                  </span>
+                  <div
+                    className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 transition-colors ${
+                      isSelected ? 'bg-white/25 text-white' : 'border border-[#55473e]'
+                    }`}
+                  >
+                    {isSelected && <Check className="w-2.5 h-2.5 text-white stroke-[3]" />}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
