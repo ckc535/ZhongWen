@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Word, QuizQuestion, QuizQuestionType } from '../types';
-import { tts } from '../services/ttsService';
+import { tts, useTtsSpeaking } from '../services/ttsService';
 import { soundEffects } from '../services/soundEffects';
 import confetti from 'canvas-confetti';
 import {
@@ -260,12 +260,15 @@ export const QuickQuiz: React.FC = () => {
     soundEffects.playClick();
   };
 
-  const handlePlayAudio = (text?: string) => {
+  const { isSpeaking } = useTtsSpeaking();
+
+  const handlePlayAudio = (text?: string, force: boolean = false) => {
     if (!text) return;
+    if ((isPlayingAudio || isSpeaking) && !force) return;
     setIsPlayingAudio(true);
     tts.speak(text, settings.voiceRate, settings.voicePitch, () => {
       setIsPlayingAudio(false);
-    });
+    }, force);
   };
 
   const currentQ = questions[currentIndex];
@@ -279,7 +282,7 @@ export const QuickQuiz: React.FC = () => {
     // Với các bài nhìn chữ (hanzi-to-vi, hanzi-to-pinyin): KHÔNG tự động đọc, người dùng bấm vào biểu tượng loa mới phát âm.
     if (isPlaying && currentQ && !isFinished) {
       if (currentQ.type === 'audio-to-hanzi' && currentQ.audioText) {
-        handlePlayAudio(currentQ.audioText);
+        handlePlayAudio(currentQ.audioText, true);
       }
     }
 
@@ -460,15 +463,16 @@ export const QuickQuiz: React.FC = () => {
           <div className="py-2">
             {currentQ.type === 'audio-to-hanzi' ? (
               <button
+                disabled={isPlayingAudio || isSpeaking}
                 onClick={() => handlePlayAudio(currentQ.audioText)}
-                className={`w-20 h-20 mx-auto rounded-3xl border flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
-                  isPlayingAudio
-                    ? 'bg-[#33261a] border-[#553c24] text-[#e5a044] scale-105 shadow-lg shadow-[#e5a044]/20'
-                    : 'bg-[#27211d] hover:bg-[#322a25] border-[#382f29] text-[#df5343]'
+                className={`w-20 h-20 mx-auto rounded-3xl border flex items-center justify-center transition-all ${
+                  (isPlayingAudio || isSpeaking)
+                    ? 'bg-[#33261a] border-[#553c24] text-[#e5a044] scale-105 shadow-lg shadow-[#e5a044]/20 cursor-not-allowed'
+                    : 'bg-[#27211d] hover:bg-[#322a25] border-[#382f29] text-[#df5343] active:scale-95 cursor-pointer'
                 }`}
-                title="Bấm để nghe âm thanh"
+                title={(isPlayingAudio || isSpeaking) ? 'Đang phát âm...' : 'Bấm để nghe âm thanh'}
               >
-                <Volume2 className={`w-8 h-8 ${isPlayingAudio ? 'animate-pulse' : ''}`} />
+                <Volume2 className={`w-8 h-8 ${(isPlayingAudio || isSpeaking) ? 'animate-pulse' : ''}`} />
               </button>
             ) : (
               <div className="flex items-center justify-center gap-3">
@@ -479,15 +483,16 @@ export const QuickQuiz: React.FC = () => {
                 </span>
                 {currentQ.audioText && (
                   <button
+                    disabled={isPlayingAudio || isSpeaking}
                     onClick={() => handlePlayAudio(currentQ.audioText)}
-                    className={`p-2 rounded-xl border transition-all active:scale-95 cursor-pointer ${
-                      isPlayingAudio
-                        ? 'bg-[#33261a] border-[#553c24] text-[#e5a044] scale-110 shadow-md shadow-[#e5a044]/20'
-                        : 'bg-[#27211d] hover:bg-[#322a25] text-[#df5343] border-[#382f29]'
+                    className={`p-2 rounded-xl border transition-all ${
+                      (isPlayingAudio || isSpeaking)
+                        ? 'bg-[#33261a] border-[#553c24] text-[#e5a044] scale-110 shadow-md shadow-[#e5a044]/20 cursor-not-allowed'
+                        : 'bg-[#27211d] hover:bg-[#322a25] text-[#df5343] border-[#382f29] active:scale-95 cursor-pointer'
                     }`}
-                    title="Nghe phát âm chuẩn"
+                    title={(isPlayingAudio || isSpeaking) ? 'Đang phát âm...' : 'Nghe phát âm chuẩn'}
                   >
-                    <Volume2 className={`w-4 h-4 ${isPlayingAudio ? 'animate-pulse' : ''}`} />
+                    <Volume2 className={`w-4 h-4 ${(isPlayingAudio || isSpeaking) ? 'animate-pulse' : ''}`} />
                   </button>
                 )}
               </div>

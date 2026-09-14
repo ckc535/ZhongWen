@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { StoryPassage, DetectedNewWord } from '../types';
 import { GeminiService, StoryLengthOption } from '../services/geminiService';
-import { tts } from '../services/ttsService';
+import { tts, useTtsSpeaking } from '../services/ttsService';
 import { soundEffects } from '../services/soundEffects';
 import confetti from 'canvas-confetti';
 import {
@@ -245,6 +245,8 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
     }
   };
 
+  const { isSpeaking, speakingText } = useTtsSpeaking();
+
   // Play audio for entire passage
   const handlePlayPassageAudio = () => {
     if (!story) return;
@@ -253,6 +255,7 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
       setIsPlayingAudio(false);
       return;
     }
+    if (isSpeaking) return;
 
     soundEffects.playClick();
     setIsPlayingAudio(true);
@@ -263,12 +266,14 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
 
   const handlePlaySentenceAudio = (e: React.MouseEvent, chineseSentence: string) => {
     e.stopPropagation();
+    if (isSpeaking) return;
     soundEffects.playClick();
     tts.speak(chineseSentence, settings.voiceRate, settings.voicePitch);
   };
 
   const handlePlayWordAudio = (e: React.MouseEvent, hanzi: string) => {
     e.stopPropagation();
+    if (isSpeaking) return;
     soundEffects.playClick();
     tts.speak(hanzi, settings.voiceRate, settings.voicePitch);
   };
@@ -798,11 +803,14 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
             <div className="flex items-center gap-2">
               {/* 🔊 Audio Reader Button */}
               <button
+                disabled={isSpeaking && !isPlayingAudio}
                 onClick={handlePlayPassageAudio}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
                   isPlayingAudio
-                    ? 'bg-[#df5343] text-white border-[#df5343] animate-pulse'
-                    : 'bg-[#27211d] hover:bg-[#322a25] text-[#d8cebe] border-[#382f29]'
+                    ? 'bg-[#df5343] text-white border-[#df5343] animate-pulse cursor-pointer'
+                    : isSpeaking
+                    ? 'bg-[#191512] text-[#6b625b] border-[#2e2621] cursor-not-allowed opacity-60'
+                    : 'bg-[#27211d] hover:bg-[#322a25] text-[#d8cebe] border-[#382f29] cursor-pointer'
                 }`}
               >
                 {isPlayingAudio ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5 text-[#df5343]" />}
@@ -918,9 +926,15 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
                   </div>
 
                   <button
+                    type="button"
+                    disabled={isSpeaking}
                     onClick={(e) => handlePlaySentenceAudio(e, sent.chinese)}
-                    className="p-2 text-[#8e837a] hover:text-[#df5343] transition-colors shrink-0 rounded-xl hover:bg-[#27211d]"
-                    title="Nghe câu này"
+                    className={`p-2 transition-colors shrink-0 rounded-xl ${
+                      isSpeaking
+                        ? 'text-[#554c44] opacity-50 cursor-not-allowed'
+                        : 'text-[#8e837a] hover:text-[#df5343] hover:bg-[#27211d] cursor-pointer'
+                    }`}
+                    title={isSpeaking ? 'Đang phát âm...' : 'Nghe câu này'}
                   >
                     <Volume2 className="w-4 h-4" />
                   </button>
@@ -981,9 +995,17 @@ export const AIReadingPassage: React.FC<AIReadingPassageProps> = ({ onOpenStroke
 
                         <div className="flex items-center gap-1 shrink-0">
                           <button
+                            type="button"
+                            disabled={isSpeaking}
                             onClick={(e) => handlePlayWordAudio(e, nw.hanzi)}
-                            className="p-1.5 text-[#8e837a] hover:text-[#df5343] rounded-lg hover:bg-[#27211d]"
-                            title="Nghe phát âm"
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              isSpeaking && speakingText === nw.hanzi
+                                ? 'text-[#e5a044] bg-[#33261a] cursor-not-allowed animate-pulse'
+                                : isSpeaking
+                                ? 'text-[#554c44] opacity-50 cursor-not-allowed'
+                                : 'text-[#8e837a] hover:text-[#df5343] hover:bg-[#27211d] cursor-pointer'
+                            }`}
+                            title={isSpeaking ? 'Đang phát âm...' : 'Nghe phát âm'}
                           >
                             <Volume2 className="w-3.5 h-3.5" />
                           </button>

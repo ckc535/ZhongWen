@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Word } from '../types';
-import { tts } from '../services/ttsService';
+import { tts, useTtsSpeaking } from '../services/ttsService';
 import { soundEffects } from '../services/soundEffects';
 import HanziWriter from 'hanzi-writer';
 import {
@@ -208,9 +208,12 @@ export const StrokeOrderCanvas: React.FC<StrokeOrderCanvasProps> = ({ initialCha
     writerInstanceRef.current.showCharacter();
   };
 
+  const { isSpeaking } = useTtsSpeaking();
+
   // Play audio for current character or full word
   const handlePlayAudio = (e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (isSpeaking) return;
     soundEffects.playClick();
     tts.speak(activeWord?.hanzi || currentChar, settings.voiceRate, settings.voicePitch);
   };
@@ -467,11 +470,17 @@ export const StrokeOrderCanvas: React.FC<StrokeOrderCanvasProps> = ({ initialCha
             <div ref={writerContainerRef} className="cursor-crosshair select-none" />
 
             <button
+              type="button"
+              disabled={isSpeaking}
               onClick={() => handlePlayAudio()}
-              className="absolute bottom-2 right-2 p-2 rounded-xl bg-[#27211d] hover:bg-[#322a25] text-[#df5343] border border-[#382f29] shadow-sm transition-all cursor-pointer"
-              title="Nghe phát âm chữ này"
+              className={`absolute bottom-2 right-2 p-2 rounded-xl border shadow-sm transition-all ${
+                isSpeaking
+                  ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] cursor-not-allowed opacity-80'
+                  : 'bg-[#27211d] hover:bg-[#322a25] text-[#df5343] border-[#382f29] cursor-pointer active:scale-95'
+              }`}
+              title={isSpeaking ? 'Đang phát âm...' : 'Nghe phát âm chữ này'}
             >
-              <Volume2 className="w-4 h-4" />
+              <Volume2 className={`w-4 h-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
             </button>
           </div>
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Word, StudyDirection, StudyFilter } from '../types';
-import { tts } from '../services/ttsService';
+import { tts, useTtsSpeaking } from '../services/ttsService';
 import { soundEffects } from '../services/soundEffects';
 import confetti from 'canvas-confetti';
 import {
@@ -112,13 +112,14 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
     setShowHint(false);
   }, [currentIndex]);
 
-  // Play audio for current word
+  const { isSpeaking } = useTtsSpeaking();
+
   // Play audio for current word
   const playAudio = useCallback(() => {
-    if (!currentWord) return;
+    if (!currentWord || isSpeaking) return;
     soundEffects.playClick();
     tts.speak(currentWord.hanzi, settings.voiceRate, settings.voicePitch);
-  }, [currentWord, settings.voiceRate, settings.voicePitch]);
+  }, [currentWord, isSpeaking, settings.voiceRate, settings.voicePitch]);
 
   const [slideDirection, setSlideDirection] = useState<'next' | 'prev' | 'none'>('none');
   const [isTransitioningCard, setIsTransitioningCard] = useState<boolean>(false);
@@ -551,14 +552,20 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                     <button
                       type="button"
                       data-interactive="true"
+                      disabled={isSpeaking}
                       onClick={(e) => {
                         e.stopPropagation();
                         playAudio();
                       }}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#27211d] hover:bg-[#322a25] text-[#f5ede4] border border-[#3d332c] text-xs font-semibold transition-all active:scale-95 shadow-sm cursor-pointer"
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-semibold transition-all shadow-sm ${
+                        isSpeaking
+                          ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] cursor-not-allowed opacity-80'
+                          : 'bg-[#27211d] hover:bg-[#322a25] text-[#f5ede4] border-[#3d332c] active:scale-95 cursor-pointer'
+                      }`}
+                      title={isSpeaking ? 'Đang phát âm...' : 'Phát âm'}
                     >
-                      <Volume2 className="w-3.5 h-3.5 text-[#df5343]" />
-                      <span>Phát âm</span>
+                      <Volume2 className={`w-3.5 h-3.5 text-[#df5343] ${isSpeaking ? 'animate-pulse' : ''}`} />
+                      <span>{isSpeaking ? 'Đang phát...' : 'Phát âm'}</span>
                     </button>
                   </>
                 )}
@@ -584,18 +591,23 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                     <button
                       type="button"
                       data-interactive="true"
+                      disabled={isSpeaking}
                       onClick={(e) => {
                         e.stopPropagation();
                         playAudio();
                       }}
-                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl bg-[#27211d] hover:bg-[#322a25] border-2 border-[#df5343] flex items-center justify-center text-[#df5343] shadow-xl active:scale-95 transition-all group-hover:border-[#eb5f50] cursor-pointer"
-                      title="Bấm để nghe lại phát âm"
+                      className={`w-20 h-20 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl border-2 flex items-center justify-center shadow-xl transition-all ${
+                        isSpeaking
+                          ? 'bg-[#33261a] border-[#e5a044] text-[#e5a044] cursor-not-allowed scale-105'
+                          : 'bg-[#27211d] hover:bg-[#322a25] border-[#df5343] text-[#df5343] active:scale-95 cursor-pointer group-hover:border-[#eb5f50]'
+                      }`}
+                      title={isSpeaking ? 'Đang phát âm...' : 'Bấm để nghe lại phát âm'}
                     >
-                      <Volume2 className="w-10 h-10 sm:w-12 sm:h-12 animate-pulse" />
+                      <Volume2 className={`w-10 h-10 sm:w-12 sm:h-12 ${isSpeaking ? 'animate-pulse' : ''}`} />
                     </button>
 
                     <span className="text-xs font-bold text-[#f5ede4]">
-                      Đang nghe phát âm...
+                      {isSpeaking ? 'Đang phát âm...' : 'Đang nghe phát âm...'}
                     </span>
                     <p className="text-[11px] sm:text-xs text-[#8e837a]">
                       Bấm vào loa để nghe lại và đoán xem đây là chữ Hán nào
@@ -737,14 +749,20 @@ export const FlashcardStudy: React.FC<FlashcardStudyProps> = ({ onOpenStrokeWrit
                 <button
                   type="button"
                   data-interactive="true"
+                  disabled={isSpeaking}
                   onClick={(e) => {
                     e.stopPropagation();
                     playAudio();
                   }}
-                  className="flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-[#27211d] hover:bg-[#322a25] text-[#f5ede4] border border-[#3d332c] text-xs font-semibold transition-all active:scale-95 shadow-sm cursor-pointer"
+                  className={`flex items-center gap-1.5 px-3.5 py-1 rounded-full border text-xs font-semibold transition-all shadow-sm ${
+                    isSpeaking
+                      ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] cursor-not-allowed opacity-80'
+                      : 'bg-[#27211d] hover:bg-[#322a25] text-[#f5ede4] border-[#3d332c] active:scale-95 cursor-pointer'
+                  }`}
+                  title={isSpeaking ? 'Đang phát âm...' : 'Nghe lại'}
                 >
-                  <Volume2 className="w-3.5 h-3.5 text-[#df5343]" />
-                  <span>Nghe lại</span>
+                  <Volume2 className={`w-3.5 h-3.5 text-[#df5343] ${isSpeaking ? 'animate-pulse' : ''}`} />
+                  <span>{isSpeaking ? 'Đang phát...' : 'Nghe lại'}</span>
                 </button>
 
                 {/* Radicals, Mnemonic, Examples */}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { soundEffects } from '../services/soundEffects';
-import { tts } from '../services/ttsService';
+import { tts, useTtsSpeaking } from '../services/ttsService';
 import { GeminiService } from '../services/geminiService';
 import {
   Settings,
@@ -77,8 +77,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!isOpen) return null;
 
+  const { isSpeaking } = useTtsSpeaking();
+
   const handleTestVoice = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (isSpeaking) return;
     if (selectedVoiceURI) {
       tts.setVoiceByURI(selectedVoiceURI);
     }
@@ -393,12 +396,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             <button
               type="button"
+              disabled={isSpeaking}
               onClick={handleTestVoice}
-              className="px-2.5 py-1 rounded-lg bg-[#27211d] hover:bg-[#382f29] text-[#5eb786] border border-[#3e3228] text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
-              title="Bấm để nghe thử giọng đọc hiện tại"
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all border ${
+                isSpeaking
+                  ? 'bg-[#33261a] text-[#e5a044] border-[#553c24] cursor-not-allowed opacity-80'
+                  : 'bg-[#27211d] hover:bg-[#382f29] text-[#5eb786] border-[#3e3228] active:scale-95 cursor-pointer'
+              }`}
+              title={isSpeaking ? 'Đang phát âm...' : 'Bấm để nghe thử giọng đọc hiện tại'}
             >
-              <Play className="w-3 h-3 fill-[#5eb786]" />
-              <span>🔊 Nghe thử giọng</span>
+              <Play className={`w-3 h-3 fill-current ${isSpeaking ? 'animate-pulse' : ''}`} />
+              <span>{isSpeaking ? '🔊 Đang đọc...' : '🔊 Nghe thử giọng'}</span>
             </button>
           </div>
 

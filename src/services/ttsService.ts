@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react';
+
 // Dual-Engine Chinese TTS Service (Web Speech API + High-Definition Online Audio Streaming)
 // Guarantees 100% reliable pronunciation across Brave, Microsoft Edge, Chrome, Safari, and Mobile.
 
@@ -12,6 +14,67 @@ class TTSService {
   private currentChunkIndex: number = 0;
   private chunksToSpeak: string[] = [];
   private isBrave: boolean = false;
+  private _isSpeaking: boolean = false;
+  private currentSpeakingText: string | null = null;
+  private listeners: Set<() => void> = new Set();
+  private safetyTimeout: any = null;
+  private snapshot = { isSpeaking: false, speakingText: null as string | null };
+
+  public isSpeaking(): boolean {
+    return this._isSpeaking;
+  }
+
+  public getCurrentSpeakingText(): string | null {
+    return this.currentSpeakingText;
+  }
+
+  public subscribe = (listener: () => void): () => void => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  private notify() {
+    this.listeners.forEach(fn => {
+      try {
+        fn();
+      } catch (err) {
+        console.error('[TTS] Error in listener:', err);
+      }
+    });
+  }
+
+  private setSpeaking(speaking: boolean, text: string | null = null) {
+    if (this.safetyTimeout) {
+      clearTimeout(this.safetyTimeout);
+      this.safetyTimeout = null;
+    }
+
+    if (this._isSpeaking === speaking && this.currentSpeakingText === text) {
+      return;
+    }
+
+    this._isSpeaking = speaking;
+    this.currentSpeakingText = speaking ? text : null;
+    this.snapshot = { isSpeaking: this._isSpeaking, speakingText: this.currentSpeakingText };
+    this.notify();
+
+    if (speaking) {
+      // Safety watchdog: tự động reset nếu trình duyệt không bắn sự kiện kết thúc
+      const maxDuration = Math.max(15000, (text?.length || 10) * 600);
+      this.safetyTimeout = setTimeout(() => {
+        if (this._isSpeaking) {
+          console.warn('[TTS] Watchdog timeout reached, auto-resetting speaking state.');
+          this.stop();
+        }
+      }, maxDuration);
+    }
+  }
+
+  public getSnapshot = () => {
+    return this.snapshot;
+  };
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -262,21 +325,43 @@ class TTSService {
   /**
    * Speak Chinese text with automatic chunking and cross-browser fallback
    */
-  public speak(text: string, rate: number = 0.75, pitch: number = 1.0, onEnd?: () => void) {
-    // Stop any ongoing speech or audio
-    this.stop();
-
+  public speak(
+    text: string,
+    rate: number = 0.75,
+    pitch: number = 1.0,
+    onEnd?: () => void,
+    force: boolean = false
+  ) {
     if (!text || !text.trim()) {
       onEnd?.();
       return;
     }
 
+    // NẾU ĐANG PHÁT ÂM VÀ KHÔNG PHẢI ÉP BUỘC (FORCE) -> CHẶN KHÔNG CHO BẤM TIẾP
+    if (this._isSpeaking && !force) {
+      return;
+    }
+
+    // Dừng phát âm trước đó nếu được chỉ định force
+    if (force) {
+      this.stop();
+    }
+
     const cleanText = text.trim();
+    this.setSpeaking(true, cleanText);
+
+    let finished = false;
+    const handleComplete = () => {
+      if (finished) return;
+      finished = true;
+      this.setSpeaking(false);
+      onEnd?.();
+    };
 
     // Condition 1: If browser is Brave OR system has no Chinese voice installed -> use Online Audio Engine immediately
     const zhVoices = this.getAvailableChineseVoices();
     if (this.isBrave || !this.synth || zhVoices.length === 0) {
-      this.speakWithOnlineEngine(cleanText, rate, onEnd);
+      this.speakWithOnlineEngine(cleanText, rate, handleComplete);
       return;
     }
 
@@ -286,7 +371,7 @@ class TTSService {
 
     // If still no voice found after loading
     if (!this.voice) {
-      this.speakWithOnlineEngine(cleanText, rate, onEnd);
+      this.speakWithOnlineEngine(cleanText, rate, handleComplete);
       return;
     }
 
@@ -294,7 +379,7 @@ class TTSService {
     const chunks = this.splitIntoChunks(cleanText);
 
     if (chunks.length <= 1) {
-      this.speakSingleUtterance(cleanText, rate, pitch, onEnd);
+      this.speakSingleUtterance(cleanText, rate, pitch, handleComplete);
       return;
     }
 
@@ -305,13 +390,13 @@ class TTSService {
 
     const speakNextChunk = () => {
       if (!this.isSpeakingChunks) {
-        onEnd?.();
+        handleComplete();
         return;
       }
 
       if (this.currentChunkIndex >= this.chunksToSpeak.length) {
         this.isSpeakingChunks = false;
-        onEnd?.();
+        handleComplete();
         return;
       }
 
@@ -442,7 +527,17 @@ class TTSService {
         this.synth.cancel();
       } catch {}
     }
+
+    this.setSpeaking(false);
   }
 }
 
 export const tts = new TTSService();
+
+export const useTtsSpeaking = (): { isSpeaking: boolean; speakingText: string | null } => {
+  return useSyncExternalStore(
+    (onStoreChange) => tts.subscribe(onStoreChange),
+    () => tts.getSnapshot(),
+    () => ({ isSpeaking: false, speakingText: null })
+  );
+};

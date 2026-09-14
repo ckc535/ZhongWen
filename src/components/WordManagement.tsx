@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Word } from '../types';
 import { GeminiService } from '../services/geminiService';
-import { tts } from '../services/ttsService';
+import { tts, useTtsSpeaking } from '../services/ttsService';
 import { soundEffects } from '../services/soundEffects';
 import {
   Search,
@@ -82,9 +82,12 @@ export const WordManagement: React.FC<WordManagementProps> = ({
     setCurrentPage(1);
   }, [categoryTab, filterStatus, filterStarredOnly, searchQuery, pageSize]);
 
+  const { isSpeaking, speakingText } = useTtsSpeaking();
+
   // Play audio
   const handlePlayAudio = (e: React.MouseEvent, hanzi: string) => {
     e.stopPropagation();
+    if (isSpeaking) return;
     soundEffects.playClick();
     tts.speak(hanzi, settings.voiceRate, settings.voicePitch);
   };
@@ -764,9 +767,16 @@ export const WordManagement: React.FC<WordManagementProps> = ({
                         {/* Audio speaker button directly next to pinyin */}
                         <button
                           type="button"
+                          disabled={isSpeaking}
                           onClick={(e) => handlePlayAudio(e, word.hanzi)}
-                          className="p-1 rounded-md text-[#8e837a] hover:text-[#df5343] hover:bg-[#27211d] transition-colors cursor-pointer"
-                          title="Nghe phát âm"
+                          className={`p-1 rounded-md transition-colors ${
+                            isSpeaking && speakingText === word.hanzi
+                              ? 'text-[#e5a044] bg-[#33261a] cursor-not-allowed animate-pulse'
+                              : isSpeaking
+                              ? 'text-[#554c44] opacity-50 cursor-not-allowed'
+                              : 'text-[#8e837a] hover:text-[#df5343] hover:bg-[#27211d] cursor-pointer'
+                          }`}
+                          title={isSpeaking ? 'Đang phát âm...' : 'Nghe phát âm'}
                         >
                           <Volume2 className="w-3.5 h-3.5" />
                         </button>
