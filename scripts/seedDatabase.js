@@ -1,7 +1,9 @@
 import { MongoClient } from 'mongodb';
 import { HSK1_ALL_LESSONS } from '../server/hsk1StarterData.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://ckc535:asd123456@cluster0.xzi6soq.mongodb.net/?appName=Cluster0';
+const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = 'zhongwen';
 
 async function seed() {
