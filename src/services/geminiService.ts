@@ -1,4 +1,4 @@
-import { Word, StoryPassage, DetectedNewWord, StoryToken } from '../types';
+import { Word, StoryPassage, DetectedNewWord, StoryToken, ChineseRule } from '../types';
 
 export type AiConnectionState = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -870,4 +870,279 @@ Bắt buộc trả về duy nhất chuỗi JSON hợp lệ theo đúng schema sa
 
     return false;
   }
+
+  /**
+   * Auto-generate a complete, pedagogical Chinese grammar / phonology rule with AI
+   */
+  public static async autoGenerateChineseRule(
+    inputTitleOrPrompt: string,
+    apiKey?: string,
+    model?: string
+  ): Promise<Partial<ChineseRule>> {
+    const raw = inputTitleOrPrompt?.trim();
+    if (!raw) {
+      throw new Error('Vui lòng nhập tên quy tắc hoặc chủ đề cần AI soạn.');
+    }
+
+    const prompt = `Bạn là chuyên gia ngôn ngữ học và giảng dạy tiếng Trung (HSK 1-6, biến âm ngữ âm, ngữ pháp) hàng đầu.
+Người dùng muốn tạo một quy tắc học nhớ trong tiếng Trung với chủ đề / từ khoá: "${raw}".
+
+Hãy phân tích và biên soạn đầy đủ, chuẩn xác, sư phạm và dễ hiểu nhất theo đúng định dạng JSON sau:
+{
+  "title": "Tên quy tắc đầy đủ, rõ ràng và chuẩn mực tiếng Việt",
+  "category": "pronunciation" | "time_numbers" | "grammar" | "vocabulary" | "writing" | "other",
+  "formula": "Công thức hoặc sơ đồ nhớ nhanh trực quan (ví dụ: Thanh 3 + Thanh 3 ➔ Thanh 2 + Thanh 3, hoặc S + Thời gian + Địa điểm + V + O)",
+  "summary": "Tóm tắt cốt lõi 1-2 câu ngắn gọn, dễ thuộc lòng nhất",
+  "detail": "Giải thích chi tiết, cơ chế hoạt động, các trường hợp ngữ pháp/phát âm cụ thể",
+  "examples": [
+    {
+      "chinese": "Chữ Hán giản thể chuẩn",
+      "pinyin": "Pinyin có dấu thanh điệu đầy đủ",
+      "vietnamese": "Nghĩa tiếng Việt chuẩn xác",
+      "note": "Ghi chú ngắn về cách áp dụng quy tắc trong ví dụ này"
+    }
+  ],
+  "exceptions": "Ngoại lệ hoặc các lỗi sai người Việt hay mắc phải cần lưu ý tránh",
+  "tags": ["danh", "sách", "thẻ", "từ", "khoá"],
+  "practiceQuestions": [
+    {
+      "id": "q1",
+      "question": "Câu hỏi trắc nghiệm kiểm tra việc áp dụng quy tắc này",
+      "options": ["Lựa chọn A", "Lựa chọn B", "Lựa chọn C", "Lựa chọn D"],
+      "correctAnswer": "Đáp án đúng (phải trùng khớp chính xác 1 trong 4 lựa chọn trên)",
+      "explanation": "Lời giải thích cặn kẽ tại sao chọn đáp án này"
+    }
+  ]
 }
+
+Yêu cầu BẮT BUỘC:
+- Trả về JSON thuần tuý, không kèm markdown giải thích bên ngoài.
+- Cung cấp ít nhất 3 đến 5 ví dụ minh hoạ thực tế, sinh động.
+- Cung cấp ít nhất 1-2 câu hỏi trắc nghiệm thực tế để kiểm tra học nhớ.
+- Category bắt buộc phải là một trong các giá trị: "pronunciation", "time_numbers", "grammar", "vocabulary", "writing", "other".`;
+
+    try {
+      const jsonText = await GeminiService.callAiEngineStream(apiKey, model, prompt, true);
+      const parsed = GeminiService.safeExtractAndParseJson(jsonText);
+
+      return {
+        title: parsed.title || raw,
+        category: parsed.category || 'grammar',
+        formula: parsed.formula || '',
+        summary: parsed.summary || '',
+        detail: parsed.detail || '',
+        examples: Array.isArray(parsed.examples) && parsed.examples.length > 0 ? parsed.examples : [
+          { chinese: '我吃完了。', pinyin: 'Wǒ chī wán le.', vietnamese: 'Tôi đã ăn xong rồi.', note: 'Ví dụ minh họa' }
+        ],
+        exceptions: parsed.exceptions || '',
+        tags: Array.isArray(parsed.tags) ? parsed.tags : [raw],
+        practiceQuestions: Array.isArray(parsed.practiceQuestions) ? parsed.practiceQuestions : []
+      };
+    } catch (err) {
+      console.warn('[GeminiService] AI Rule generation error, checking fallback knowledge templates:', err);
+      const lower = raw.toLowerCase();
+
+      if (lower.includes('bả') || lower.includes('ba') || lower.includes('把')) {
+        return {
+          title: 'Cấu trúc câu chữ 把 (Bǎ)',
+          category: 'grammar',
+          formula: 'Chủ ngữ + 把 + Tân ngữ + Động từ + Thành phần khác (了/bổ ngữ...)',
+          summary: 'Dùng để nhấn mạnh sự tác động, xử lý của chủ thể làm thay đổi trạng thái hoặc vị trí của tân ngữ xác định.',
+          detail: 'Câu chữ 把 là điểm ngữ pháp cực kỳ trọng yếu trong tiếng Trung (HSK 3-4). Động từ trong câu chữ 把 không được đứng trơ trọi một mình mà luôn phải mang theo thành phần bổ trợ như 了, bổ ngữ kết quả, bổ ngữ xu hướng, hoặc lặp lại động từ. Tân ngữ sau 把 phải là vật/người đã xác định cụ thể.',
+          examples: [
+            { chinese: '请把门关上。', pinyin: 'Qǐng bǎ mén guān shàng.', vietnamese: 'Làm ơn đóng cửa lại.', note: '把 + tân ngữ "门" (cửa) + động từ kèm bổ ngữ "关上"' },
+            { chinese: '他把作业做完了。', pinyin: 'Tā bǎ zuòyè zuò wán le.', vietnamese: 'Anh ấy đã làm xong bài tập rồi.', note: 'Nhấn mạnh bài tập đã được giải quyết xong' },
+            { chinese: '我把这本书送给你。', pinyin: 'Wǒ bǎ zhè běn shū sòng gěi nǐ.', vietnamese: 'Tôi tặng bạn cuốn sách này.', note: 'Tân ngữ "zhè běn shū" bị chuyển giao vị trí' }
+          ],
+          exceptions: 'Phủ định (不, 没) và động từ năng nguyện (想, 要, 能, 可以) phải đứng TRƯỚC chữ 把, tuyệt đối không được đặt sau 把.',
+          tags: ['câu chữ 把', 'bǎ', 'ngữ pháp HSK3', 'bổ ngữ'],
+          practiceQuestions: [
+            {
+              id: 'pq_ba_1',
+              question: 'Vị trí của từ phủ định "没" trong câu chữ 把 đúng là:',
+              options: [
+                'Chủ ngữ + 没 + 把 + Tân ngữ + Động từ',
+                'Chủ ngữ + 把 + Tân ngữ + 没 + Động từ',
+                'Chủ ngữ + 把 + 没 + Tân ngữ + Động từ',
+                'Chủ ngữ + 把 + Tân ngữ + Động từ + 没'
+              ],
+              correctAnswer: 'Chủ ngữ + 没 + 把 + Tân ngữ + Động từ',
+              explanation: 'Trong câu chữ 把, từ phủ định (不, 没) bắt buộc phải đứng trước chữ 把.'
+            }
+          ]
+        };
+      }
+
+      if (lower.includes('bù') || lower.includes('bu') || lower.includes('bất') || lower.includes('不')) {
+        return {
+          title: 'Quy tắc biến điệu của chữ 不 (Bù)',
+          category: 'pronunciation',
+          formula: '不 (bù) + Thanh 4 ➔ 不 (bú) + Thanh 4',
+          summary: 'Chữ "不" bản gốc là thanh 4 (bù). Khi đứng trước một từ mang thanh 4, nó bắt buộc phải biến thành thanh 2 (bú).',
+          detail: 'Khi đứng trước các thanh 1, thanh 2, thanh 3, hoặc đứng một mình / cuối câu, chữ "不" vẫn giữ nguyên âm gốc là thanh 4 (bù). Chỉ duy nhất khi đứng trước một âm tiết thanh 4 khác, "不" mới chuyển sang đọc thanh 2 (bú) để tạo sự mượt mà khi phát âm.',
+          examples: [
+            { chinese: '不是', pinyin: 'bú shì', vietnamese: 'Không phải', note: 'Thanh 4 (shì) ➔ "不" đọc thành bú (thanh 2)' },
+            { chinese: '不对', pinyin: 'bú duì', vietnamese: 'Không đúng', note: 'Thanh 4 (duì) ➔ "不" đọc thành bú' },
+            { chinese: '不去', pinyin: 'bú qù', vietnamese: 'Không đi', note: 'Thanh 4 (qù) ➔ "不" đọc thành bú' },
+            { chinese: '不好', pinyin: 'bù hǎo', vietnamese: 'Không tốt', note: 'Thanh 3 (hǎo) ➔ "不" giữ nguyên thanh 4' },
+            { chinese: '不吃', pinyin: 'bù chī', vietnamese: 'Không ăn', note: 'Thanh 1 (chī) ➔ "不" giữ nguyên thanh 4' }
+          ],
+          exceptions: 'Khi nằm ở giữa trong câu hỏi chính phản (A不A) hoặc bổ ngữ khả năng (V得/不C), chữ "不" được đọc nhẹ thành thanh nhẹ (khinh thanh): 看不见 (kàn bu jiàn), 去不去 (qù bu qù).',
+          tags: ['biến điệu 不', 'bù', 'bú', 'phát âm', 'thanh điệu'],
+          practiceQuestions: [
+            {
+              id: 'pq_bu_1',
+              question: 'Cụm từ "不要" được phát âm chuẩn như thế nào?',
+              options: ['bú yào', 'bù yào', 'bǔ yào', 'bū yào'],
+              correctAnswer: 'bú yào',
+              explanation: 'Vì "要" mang thanh 4 (yào), nên chữ "不" đứng trước nó phải biến điệu thành thanh 2 (bú).'
+            }
+          ]
+        };
+      }
+
+      if (lower.includes('yī') || lower.includes('yi') || lower.includes('nhất') || lower.includes('一')) {
+        return {
+          title: 'Quy tắc biến điệu của chữ 一 (Yī)',
+          category: 'pronunciation',
+          formula: '一 + Thanh 4 ➔ yí | 一 + Thanh 1/2/3 ➔ yì | Đếm số ➔ yī',
+          summary: 'Chữ "一" gốc thanh 1 (yī). Trước thanh 4 đọc thành thanh 2 (yí); trước thanh 1, 2, 3 đọc thành thanh 4 (yì); khi đếm số hoặc cuối câu giữ nguyên thanh 1.',
+          detail: 'Biến điệu chữ 一 là một trong những hiện tượng ngữ âm thú vị nhất tiếng Trung:\n1. Đứng trước thanh 4: đọc thành thanh 2 (yí).\n2. Đứng trước thanh 1, thanh 2, thanh 3: đọc thành thanh 4 (yì).\n3. Đọc số thứ tự, số nhà, số điện thoại, đếm 1, 2, 3: giữ nguyên thanh 1 (yī).\n4. Lặp lại động từ (V một V): đọc thanh nhẹ (yi).',
+          examples: [
+            { chinese: '一共', pinyin: 'yí gòng', vietnamese: 'Tổng cộng', note: 'Gòng (thanh 4) ➔ đọc yí' },
+            { chinese: '一天', pinyin: 'yì tiān', vietnamese: 'Một ngày', note: 'Tiān (thanh 1) ➔ đọc yì' },
+            { chinese: '一年', pinyin: 'yì nián', vietnamese: 'Một năm', note: 'Nián (thanh 2) ➔ đọc yì' },
+            { chinese: '一起', pinyin: 'yì qǐ', vietnamese: 'Cùng nhau', note: 'Qǐ (thanh 3) ➔ đọc yì' },
+            { chinese: '第一', pinyin: 'dì-yī', vietnamese: 'Thứ nhất', note: 'Số thứ tự ➔ giữ nguyên thanh 1 yī' }
+          ],
+          exceptions: 'Trong số phòng, số xe, số điện thoại, "一" thường được đọc là "yāo" để tránh nhầm lẫn với số 7 (qī).',
+          tags: ['biến điệu 一', 'yī', 'yí', 'yì', 'yāo', 'phát âm'],
+          practiceQuestions: [
+            {
+              id: 'pq_yi_1',
+              question: 'Cụm từ "一块儿" (cùng nhau/một khối) được phát âm chuẩn là:',
+              options: ['yí kuàir', 'yì kuàir', 'yī kuàir', 'yi kuàir'],
+              correctAnswer: 'yí kuàir',
+              explanation: 'Vì "块" (kuài) mang thanh 4, nên "一" đứng trước biến thành thanh 2 (yí).'
+            }
+          ]
+        };
+      }
+
+      if (lower.includes('so sánh') || lower.includes('bǐ') || lower.includes('bi') || lower.includes('比')) {
+        return {
+          title: 'Cấu trúc câu so sánh hơn với chữ 比 (Bǐ)',
+          category: 'grammar',
+          formula: 'A + 比 + B + Tính từ (+ 一点儿 / 得多 / Số lượng cụ thể)',
+          summary: 'Dùng để so sánh sự chênh lệch tính chất, đặc điểm giữa đối tượng A và đối tượng B (A hơn B về mặt tính từ).',
+          detail: 'Mẫu câu so sánh cơ bản nhất trong tiếng Trung:\n- Khẳng định: A + 比 + B + Tính từ.\n- Nhấn mạnh mức độ ít: A + 比 + B + Tính từ + 一点儿 / 一些.\n- Nhấn mạnh mức độ nhiều: A + 比 + B + Tính từ + 多了 / 得多.\n- Mức độ cụ thể: A + 比 + B + Tính từ + con số (VD: 大两岁 - lớn hơn 2 tuổi).',
+          examples: [
+            { chinese: '哥哥比弟弟高。', pinyin: 'Gēge bǐ dìdi gāo.', vietnamese: 'Anh trai cao hơn em trai.', note: 'So sánh cơ bản: A + 比 + B + Tính từ' },
+            { chinese: '今天比昨天冷得多。', pinyin: 'Jīntiān bǐ zuótiān lěng de duō.', vietnamese: 'Hôm nay lạnh hơn hôm qua rất nhiều.', note: 'Bổ ngữ mức độ "得多" đặt sau tính từ' },
+            { chinese: '他比我大三岁。', pinyin: 'Tā bǐ wǒ dà sān suì.', vietnamese: 'Anh ấy lớn hơn tôi 3 tuổi.', note: 'Số lượng chênh lệch đặt sau tính từ' }
+          ],
+          exceptions: 'TUYỆT ĐỐI KHÔNG dùng các phó từ chỉ mức độ như 很 (rất), 非常 (vô cùng), 太 (quá) trước tính từ trong câu so sánh chữ 比. Sai: A 比 B 很高 (❌). Đúng: A 比 B 高 (✔️).',
+          tags: ['câu so sánh', 'bǐ', 'chữ 比', 'ngữ pháp HSK2', 'HSK3'],
+          practiceQuestions: [
+            {
+              id: 'pq_bi_1',
+              question: 'Câu nào sau đây SAI ngữ pháp câu so sánh chữ 比?',
+              options: [
+                '他比我很大 (❌)',
+                '他比我大得多 (✔️)',
+                '他比我大两岁 (✔️)',
+                '他比我大一点儿 (✔️)'
+              ],
+              correctAnswer: '他比我很大 (❌)',
+              explanation: 'Trong câu so sánh với 比, không được dùng các phó từ mức độ như "很", "非常" đứng trước tính từ.'
+            }
+          ]
+        };
+      }
+
+      if (lower.includes('cặp từ') || lower.includes('gang') || lower.includes('刚才') || lower.includes('刚')) {
+        return {
+          title: 'Phân biệt cặp từ 刚 (Gāng) và 刚才 (Gāngcái)',
+          category: 'vocabulary',
+          formula: 'Chủ ngữ + 刚 + Động từ | 刚才 + Chủ ngữ + Động từ (hoặc S + 刚才 + V)',
+          summary: '"刚" là phó từ (chỉ cảm nhận vừa mới xảy ra, đứng sau S); "刚才" là danh từ chỉ thời gian (khoảng thời gian thực tế vừa trôi qua vài phút trước, đứng trước hoặc sau S).',
+          detail: 'Điểm khác biệt then chốt giữa 刚 và 刚才:\n1. Từ loại: "刚" là phó từ, "刚才" là danh từ thời gian.\n2. Vị trí: "刚" chỉ đứng sau chủ ngữ trước động từ. "刚才" có thể đứng trước chủ ngữ hoặc sau chủ ngữ.\n3. Thời gian: "刚" biểu thị cảm nhận chủ quan của người nói (có thể là vừa mới 5 phút, nhưng cũng có thể là vừa tốt nghiệp năm ngoái). "刚才" chỉ thời gian khách quan trong thực tế (cách hiện tại chỉ vài phút/khoảnh khắc ngắn).\n4. Từ ngữ đi kèm: "刚才" có thể đi kèm từ phủ định "没", còn "刚" không thể đi trực tiếp với "没".',
+          examples: [
+            { chinese: '他刚才去哪儿了？', pinyin: 'Tā gāngcái qù nǎr le?', vietnamese: 'Vừa nãy anh ấy đi đâu thế?', note: '"刚才" là thời điểm khách quan vài phút trước' },
+            { chinese: '我刚来中国一个月。', pinyin: 'Wǒ gāng lái Zhōngguó yí gè yuè.', vietnamese: 'Tôi mới đến Trung Quốc được một tháng.', note: '"刚" biểu thị cảm giác chủ quan "vừa mới"' },
+            { chinese: '刚才你怎么不说？', pinyin: 'Gāngcái nǐ zěnme bù shuō?', vietnamese: 'Vừa nãy sao bạn không nói?', note: '"刚才" đứng đầu câu trước chủ ngữ "你"' }
+          ],
+          exceptions: '"刚" không thể đứng trước chủ ngữ (Sai: 刚他走了 ❌. Đúng: 刚才他走了 ✔️). Sau "刚才" không thể có từ chỉ thời gian dài (Sai: 我刚才来北京半年 ❌).',
+          tags: ['phân biệt từ', 'gāng', 'gāngcái', '刚', '刚才', 'từ vựng HSK3'],
+          practiceQuestions: [
+            {
+              id: 'pq_gang_1',
+              question: 'Điền từ thích hợp vào chỗ trống: "______ 他还在教室，现在去哪儿了？"',
+              options: ['刚才', '刚', '刚刚好', '经常'],
+              correctAnswer: '刚才',
+              explanation: 'Vì vị trí chỗ trống đứng đầu câu trước chủ ngữ "他", chỉ có danh từ thời gian "刚才" mới được đứng trước chủ ngữ.'
+            }
+          ]
+        };
+      }
+
+      if (lower.includes('giờ') || lower.includes('phút') || lower.includes('thời gian') || lower.includes('diǎn') || lower.includes('fēn')) {
+        return {
+          title: 'Quy tắc đọc Giờ & Phút trong tiếng Trung',
+          category: 'time_numbers',
+          formula: 'Giờ + 点 (diǎn) + [Số 0 零 (líng)] + Phút + [分 (fēn)]',
+          summary: 'Đọc theo thứ tự Giờ trước - Phút sau. Phút dưới 10 bắt buộc phải có "零" (líng). Phút trên 10 có thể lược bỏ chữ "分". 15 phút gọi là 一刻 (yí kè), 30 phút gọi là 半 (bàn).',
+          detail: 'Các mốc thời gian đặc biệt cần ghi nhớ:\n- 2 giờ: phải dùng 两点 (liǎng diǎn), KHÔNG dùng 二点 (èr diǎn).\n- Phút < 10: bắt buộc nói 零 (líng) + số phút + 分 (fēn), ví dụ 8:05 đọc là 八点零五分.\n- 15 phút: dùng 一刻 (yí kè), ví dụ 3:15 là 三点一刻.\n- 30 phút: dùng 半 (bàn), ví dụ 9:30 là 九点半.\n- 45 phút: 三刻 (sān kè) hoặc nói kém 差 (chà), ví dụ 7:45 là 差一刻八点.\n- Phút tròn từ 10 trở lên: có thể nói tắt bỏ chữ 分, ví dụ 10:20 là 十点二十.',
+          examples: [
+            { chinese: '两点零五分', pinyin: 'liǎng diǎn líng wǔ fēn', vietnamese: '2 giờ 5 phút', note: '2 giờ dùng 两 (liǎng), 5 phút phải có 零 (líng)' },
+            { chinese: '八点半', pinyin: 'bā diǎn bàn', vietnamese: '8 giờ rưỡi (8:30)', note: '30 phút dùng 半 (bàn)' },
+            { chinese: '三点一刻', pinyin: 'sān diǎn yí kè', vietnamese: '3 giờ 15 phút', note: '1 khắc = 15 phút' },
+            { chinese: '差五分十点', pinyin: 'chà wǔ fēn shí diǎn', vietnamese: '10 giờ kém 5 (9:55)', note: 'Nói giờ kém dùng 差 (chà)' }
+          ],
+          exceptions: 'Số 2 trong giờ nói là 两 (liǎng diǎn), nhưng số 2 trong phút nếu là 2 phút thì nói là 两分 (hoặc 二分), 12 phút nói là 十二分, 20 phút nói là 二十分.',
+          tags: ['đọc giờ', 'thời gian', 'liǎng diǎn', 'bàn', 'yí kè', 'chà', 'con số'],
+          practiceQuestions: [
+            {
+              id: 'pq_time_1',
+              question: 'Thời gian 2 giờ 5 phút đọc trong tiếng Trung chuẩn xác là gì?',
+              options: ['两点零五分', '二点五分', '两点五', '二点零五'],
+              correctAnswer: '两点零五分',
+              explanation: '2 giờ phải dùng "两点" (liǎng diǎn), và phút lẻ dưới 10 bắt buộc phải có chữ "零" (líng).'
+            }
+          ]
+        };
+      }
+
+      // Default smart structured fallback template if no specific keyword matched
+      return {
+        title: raw,
+        category: 'grammar',
+        formula: 'S + ' + raw + ' + V + O',
+        summary: `Quy tắc cốt lõi về "${raw}" trong tiếng Trung, giúp ghi nhớ cấu trúc và cách vận dụng chính xác.`,
+        detail: `Quy tắc "${raw}" là một nội dung quan trọng khi học tiếng Trung. Cần nắm vững vị trí đứng trong câu, sắc thái biểu đạt và các trường hợp biến thể để tránh nhầm lẫn khi giao tiếp và làm bài thi HSK.`,
+        examples: [
+          { chinese: '老师讲得很清楚。', pinyin: 'Lǎoshī jiǎng de hěn qīngchǔ.', vietnamese: 'Thầy giáo giảng bài rất rõ ràng.', note: 'Ví dụ áp dụng ngữ pháp chuẩn' },
+          { chinese: '我们要好好学习。', pinyin: 'Wǒmen yào hǎohǎo xuéxí.', vietnamese: 'Chúng ta phải chăm chỉ học tập.', note: 'Ví dụ giao tiếp phổ biến' },
+          { chinese: '今天的天气真好。', pinyin: 'Jīntiān de tiānqì zhēn hǎo.', vietnamese: 'Thời tiết hôm nay thật đẹp.', note: 'Ví dụ câu miêu tả' }
+        ],
+        exceptions: 'Cần chú ý trật tự từ và sự phối hợp giữa các thành phần bổ ngữ trong câu.',
+        tags: [raw, 'ngữ pháp tiếng Trung', 'quy tắc học nhớ'],
+        practiceQuestions: [
+          {
+            id: 'pq_gen_1',
+            question: `Trong tiếng Trung, quy tắc "${raw}" thường được áp dụng như thế nào?`,
+            options: [
+              'Tuân thủ theo đúng trật tự ngữ pháp và sắc thái ngữ cảnh',
+              'Luôn đặt ở vị trí cuối câu',
+              'Chỉ dùng trong văn viết, không dùng trong văn nói',
+              'Không cần thành phần bổ trợ đi kèm'
+            ],
+            correctAnswer: 'Tuân thủ theo đúng trật tự ngữ pháp và sắc thái ngữ cảnh',
+            explanation: `Cần nắm rõ bản chất quy tắc "${raw}" để áp dụng chính xác trong từng văn cảnh.`
+          }
+        ]
+      };
+    }
+  }
+}
+

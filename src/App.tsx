@@ -6,6 +6,7 @@ import { WordManagement } from './components/WordManagement';
 import { AIReadingPassage } from './components/AIReadingPassage';
 import { QuickQuiz } from './components/QuickQuiz';
 import { StrokeOrderCanvas } from './components/StrokeOrderCanvas';
+import { ChineseRulesView } from './components/ChineseRulesView';
 import { BulkAddModal } from './components/BulkAddModal';
 import { SettingsModal } from './components/SettingsModal';
 import { UserSelectionModal } from './components/UserSelectionModal';
@@ -34,7 +35,7 @@ const MainLayout: React.FC = () => {
           onOpenSettingsModal={() => setIsSettingsOpen(true)}
         />
 
-        {/* Main View Router (Synced with URL Hash #/study, #/words, #/stories, #/quiz, #/writer) */}
+        {/* Main View Router (Synced with URL Hash #/study, #/words, #/rules, #/stories, #/quiz, #/writer) */}
         <main className="flex-1 pb-10">
           {activeTab === 'study' && (
             <FlashcardStudy onOpenStrokeWriter={handleOpenStrokeWriter} />
@@ -46,6 +47,10 @@ const MainLayout: React.FC = () => {
               onOpenBulkAdd={() => setIsBulkAddOpen(true)}
               onOpenLessonImporter={() => setIsLessonImporterOpen(true)}
             />
+          )}
+
+          {activeTab === 'rules' && (
+            <ChineseRulesView />
           )}
 
           {activeTab === 'stories' && (

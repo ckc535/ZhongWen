@@ -1,6 +1,7 @@
 import express from 'express';
 import { connectToDatabase } from './mongodb.js';
 import { HSK1_ALL_LESSONS } from './hsk1StarterData.js';
+import { CHINESE_RULES_STARTER_DATA } from './chineseRulesStarterData.js';
 
 export const apiRouter = express();
 
@@ -101,11 +102,12 @@ router.get('/tts', async (req, res) => {
 router.get('/data', async (req, res) => {
   try {
     const { db } = await connectToDatabase();
-    const [words, users, progressList, settingsDoc] = await Promise.all([
+    const [words, users, progressList, settingsDoc, dbRules] = await Promise.all([
       db.collection('words').find({}, { projection: { _id: 0 } }).sort({ createdAt: -1, _id: -1 }).toArray(),
       db.collection('users').find({}, { projection: { _id: 0 } }).toArray(),
       db.collection('user_progress').find({}, { projection: { _id: 0 } }).toArray(),
-      db.collection('settings').findOne({ id: 'app_settings' }, { projection: { _id: 0 } })
+      db.collection('settings').findOne({ id: 'app_settings' }, { projection: { _id: 0 } }),
+      db.collection('rules').find({}, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray()
     ]);
 
     // Map user progress to { [userId]: { [wordId]: progress } }
@@ -128,11 +130,14 @@ router.get('/data', async (req, res) => {
       };
     }
 
+    const rules = (dbRules && dbRules.length > 0) ? dbRules : CHINESE_RULES_STARTER_DATA;
+
     res.json({
       words,
       users,
       userProgress,
-      settings: settingsDoc?.settings || null
+      settings: settingsDoc?.settings || null,
+      rules
     });
   } catch (err) {
     console.error('[API /data] Error:', err);
@@ -623,7 +628,161 @@ router.post('/reset-hsk1', async (req, res) => {
   }
 });
 
+// ==================== 15.1. CHINESE RULES (QUY TẮC TIẾNG TRUNG) ====================
+
+// Get all rules (Sorted by createdAt ascending or category)
+router.get('/rules', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    let rules = await db.collection('rules').find({}, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray();
+
+    if (!rules || rules.length === 0) {
+      await db.collection('rules').insertMany(CHINESE_RULES_STARTER_DATA, { ordered: false });
+      rules = CHINESE_RULES_STARTER_DATA;
+    }
+
+    res.json(rules);
+  } catch (err) {
+    console.error('[API /rules] Error:', err);
+    res.status(500).json({ error: 'Failed to fetch rules', details: err.message });
+  }
+});
+
+// Add a new rule
+router.post('/rules', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const ruleData = req.body;
+    const title = ruleData.title?.trim() || '';
+
+    if (!title) {
+      return res.status(400).json({ error: 'Tên quy tắc không được để trống' });
+    }
+
+    const now = Date.now();
+    const newRule = {
+      id: ruleData.id || `rule-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      title,
+      category: ruleData.category || 'grammar',
+      formula: ruleData.formula?.trim() || '',
+      summary: ruleData.summary?.trim() || '',
+      detail: ruleData.detail?.trim() || '',
+      examples: Array.isArray(ruleData.examples) ? ruleData.examples : [],
+      exceptions: ruleData.exceptions?.trim() || '',
+      tags: Array.isArray(ruleData.tags) ? ruleData.tags : [],
+      isBuiltIn: Boolean(ruleData.isBuiltIn),
+      isMastered: Boolean(ruleData.isMastered),
+      reviewCount: Number(ruleData.reviewCount) || 0,
+      correctCount: Number(ruleData.correctCount) || 0,
+      wrongCount: Number(ruleData.wrongCount) || 0,
+      practiceQuestions: Array.isArray(ruleData.practiceQuestions) ? ruleData.practiceQuestions : [],
+      createdAt: ruleData.createdAt || now,
+      updatedAt: now
+    };
+
+    await db.collection('rules').insertOne(newRule);
+    const { _id, ...cleanRule } = newRule;
+    res.status(201).json({ success: true, rule: cleanRule });
+  } catch (err) {
+    console.error('[API POST /rules] Error:', err);
+    res.status(500).json({ error: 'Failed to add rule', details: err.message });
+  }
+});
+
+// Update a rule
+router.put('/rules/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = { ...req.body };
+    delete updates._id;
+    delete updates.id;
+    updates.updatedAt = Date.now();
+
+    const { db } = await connectToDatabase();
+    const result = await db.collection('rules').findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { returnDocument: 'after', projection: { _id: 0 } }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'Rule not found' });
+    }
+
+    res.json({ success: true, rule: result });
+  } catch (err) {
+    console.error('[API PUT /rules/:id] Error:', err);
+    res.status(500).json({ error: 'Failed to update rule', details: err.message });
+  }
+});
+
+// Delete a rule
+router.delete('/rules/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { db } = await connectToDatabase();
+    await db.collection('rules').deleteOne({ id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API DELETE /rules/:id] Error:', err);
+    res.status(500).json({ error: 'Failed to delete rule', details: err.message });
+  }
+});
+
+// Update rule test/mastery progress
+router.post('/rules/:id/progress', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isMastered, isCorrect } = req.body;
+    const { db } = await connectToDatabase();
+
+    const incUpdates = { reviewCount: 1 };
+    if (isCorrect === true) {
+      incUpdates.correctCount = 1;
+    } else if (isCorrect === false) {
+      incUpdates.wrongCount = 1;
+    }
+
+    const setUpdates = {
+      lastTested: Date.now(),
+      updatedAt: Date.now()
+    };
+    if (isMastered !== undefined) {
+      setUpdates.isMastered = Boolean(isMastered);
+    }
+
+    const result = await db.collection('rules').findOneAndUpdate(
+      { id },
+      {
+        $inc: incUpdates,
+        $set: setUpdates
+      },
+      { returnDocument: 'after', projection: { _id: 0 } }
+    );
+
+    res.json({ success: true, rule: result });
+  } catch (err) {
+    console.error('[API POST /rules/:id/progress] Error:', err);
+    res.status(500).json({ error: 'Failed to update rule progress', details: err.message });
+  }
+});
+
+// Reset rules to starter default
+router.post('/rules/reset-seed', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const rulesCol = db.collection('rules');
+    await rulesCol.deleteMany({});
+    await rulesCol.insertMany(CHINESE_RULES_STARTER_DATA, { ordered: false });
+    res.json({ success: true, count: CHINESE_RULES_STARTER_DATA.length, rules: CHINESE_RULES_STARTER_DATA });
+  } catch (err) {
+    console.error('[API POST /rules/reset-seed] Error:', err);
+    res.status(500).json({ error: 'Failed to reset rules', details: err.message });
+  }
+});
+
 // ==================== 16. SERVER-SIDE AI PROXY (FAST GENERATE & ROTATION) ====================
+
 
 // AI Proxy Health Check
 router.get('/ai/health', async (_req, res) => {

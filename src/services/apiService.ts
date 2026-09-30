@@ -1,4 +1,4 @@
-import { Word, UserProfile, DatabaseSchema, UserWordProgress } from '../types';
+import { Word, UserProfile, DatabaseSchema, UserWordProgress, ChineseRule } from '../types';
 
 const API_BASE = '/api';
 
@@ -427,4 +427,121 @@ export class ApiService {
       return false;
     }
   }
+
+  /**
+   * ==================== CHINESE RULES (QUY TẮC TIẾNG TRUNG) ====================
+   */
+
+  /**
+   * Get all Chinese rules
+   */
+  public static async getRules(): Promise<ChineseRule[]> {
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/rules`);
+      if (!res.ok) throw new Error('Failed to fetch rules');
+      return await res.json();
+    } catch (err) {
+      console.error('[ApiService] getRules error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Add a new Chinese rule
+   */
+  public static async addRule(rule: Partial<ChineseRule>): Promise<ChineseRule | null> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/rules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rule)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Lỗi khi thêm quy tắc');
+      }
+      return data.rule || null;
+    } catch (err) {
+      console.error('[ApiService] addRule error:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Update a Chinese rule
+   */
+  public static async updateRule(id: string, updates: Partial<ChineseRule>): Promise<ChineseRule | null> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/rules/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi khi cập nhật quy tắc');
+      return data.rule || null;
+    } catch (err) {
+      console.error('[ApiService] updateRule error:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Delete a Chinese rule
+   */
+  public static async deleteRule(id: string): Promise<boolean> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/rules/${id}`, {
+        method: 'DELETE'
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('[ApiService] deleteRule error:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Update rule mastery or test outcome
+   */
+  public static async updateRuleProgress(
+    id: string,
+    isMastered?: boolean,
+    isCorrect?: boolean
+  ): Promise<ChineseRule | null> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/rules/${id}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isMastered, isCorrect })
+      });
+      const data = await res.json();
+      return data.rule || null;
+    } catch (err) {
+      console.error('[ApiService] updateRuleProgress error:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Reset rules to starter default
+   */
+  public static async resetRules(): Promise<ChineseRule[]> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/rules/reset-seed`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      return data.rules || [];
+    } catch (err) {
+      console.error('[ApiService] resetRules error:', err);
+      return [];
+    }
+  }
 }
+

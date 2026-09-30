@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
 import { HSK1_ALL_LESSONS } from './hsk1StarterData.js';
+import { CHINESE_RULES_STARTER_DATA } from './chineseRulesStarterData.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -19,6 +20,7 @@ export async function ensureIndexes(db) {
     const wordsCol = db.collection('words');
     const progressCol = db.collection('user_progress');
     const usersCol = db.collection('users');
+    const rulesCol = db.collection('rules');
 
     await Promise.allSettled([
       // Words collection indexes
@@ -35,7 +37,12 @@ export async function ensureIndexes(db) {
 
       // Users collection indexes
       usersCol.createIndex({ name: 1 }, { unique: true, background: true }),
-      usersCol.createIndex({ id: 1 }, { unique: true, background: true })
+      usersCol.createIndex({ id: 1 }, { unique: true, background: true }),
+
+      // Rules collection indexes
+      rulesCol.createIndex({ id: 1 }, { unique: true, background: true }),
+      rulesCol.createIndex({ category: 1 }, { background: true }),
+      rulesCol.createIndex({ createdAt: -1 }, { background: true })
     ]);
 
     indexesEnsured = true;
@@ -82,8 +89,9 @@ export async function connectToDatabase() {
 
     console.log(`[MongoDB] 🟢 Kết nối thành công tới database: "${DB_NAME}"`);
 
-    // Ensure starter words and indexes
+    // Ensure starter words, rules and indexes
     seedWordsIfEmpty(db).catch(err => console.error('[MongoDB Seeding Error]:', err));
+    seedRulesIfEmpty(db).catch(err => console.error('[MongoDB Rules Seeding Error]:', err));
     ensureIndexes(db).catch(err => console.error('[MongoDB Index Error]:', err));
 
     return { client, db };
@@ -137,3 +145,24 @@ export async function seedWordsIfEmpty(db) {
     console.error('[MongoDB] Lỗi trong quá trình nạp dữ liệu ban đầu:', err);
   }
 }
+
+/**
+ * Seed initial Chinese grammar & pronunciation rules if collection is empty
+ */
+export async function seedRulesIfEmpty(db) {
+  try {
+    const rulesCol = db.collection('rules');
+    const rulesCount = await rulesCol.countDocuments();
+
+    if (rulesCount === 0) {
+      console.log('[MongoDB] Đang nạp các quy tắc tiếng Trung chuẩn khởi đầu...');
+      if (CHINESE_RULES_STARTER_DATA.length > 0) {
+        await rulesCol.insertMany(CHINESE_RULES_STARTER_DATA, { ordered: false });
+        console.log(`[MongoDB] ✅ Nạp thành công ${CHINESE_RULES_STARTER_DATA.length} quy tắc khởi đầu.`);
+      }
+    }
+  } catch (err) {
+    console.error('[MongoDB] Lỗi trong quá trình nạp quy tắc ban đầu:', err);
+  }
+}
+

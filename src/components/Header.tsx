@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { GeminiService, AiConnectionState } from '../services/geminiService';
-import { BookOpen, Sparkles, Layers, Zap, PenTool, Settings, Flame, CheckCircle2, XCircle, Cpu } from 'lucide-react';
+import { BookOpen, Sparkles, Layers, Zap, PenTool, Settings, Flame, CheckCircle2, XCircle, Cpu, BookmarkCheck } from 'lucide-react';
 
 interface HeaderProps {
   onOpenUserModal?: () => void;
@@ -184,12 +184,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
         </div>
       </div>
 
-      {/* 5-Column Full-Width Tab Bar (100% Fits All Screen Sizes with ZERO Clipping) */}
-      <nav className="w-full grid grid-cols-5 gap-1 p-1 sm:p-1.5 rounded-2xl bg-[#1a1613] border border-[#2e2621] mb-3 shadow-sm">
+      {/* Dynamic Responsive Navigation Bar (Smooth scroll on mobile, 6-col grid on desktop) */}
+      <nav className="w-full flex items-center gap-1 p-1 sm:p-1.5 rounded-2xl bg-[#1a1613] border border-[#2e2621] mb-3 shadow-sm overflow-x-auto no-scrollbar sm:grid sm:grid-cols-6">
         {/* Tab 1: Ôn Flashcard */}
         <button
           onClick={() => setActiveTab('study')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 sm:flex-none shrink-0 min-w-[70px] sm:min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
             activeTab === 'study'
               ? 'bg-[#df5343] text-white shadow-md font-bold'
               : 'text-[#8e837a] hover:text-[#f5ede4] hover:bg-[#241e1a]'
@@ -205,7 +205,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
         {/* Tab 2: Quản Lý Chữ */}
         <button
           onClick={() => setActiveTab('words')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 sm:flex-none shrink-0 min-w-[70px] sm:min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
             activeTab === 'words'
               ? 'bg-[#df5343] text-white shadow-md font-bold'
               : 'text-[#8e837a] hover:text-[#f5ede4] hover:bg-[#241e1a]'
@@ -218,10 +218,26 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
           </span>
         </button>
 
-        {/* Tab 3: Đoạn Văn AI */}
+        {/* Tab 3: Quy Tắc Tiếng Trung */}
+        <button
+          onClick={() => setActiveTab('rules')}
+          className={`flex-1 sm:flex-none shrink-0 min-w-[70px] sm:min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
+            activeTab === 'rules'
+              ? 'bg-[#df5343] text-white shadow-md font-bold'
+              : 'text-[#8e837a] hover:text-[#f5ede4] hover:bg-[#241e1a]'
+          }`}
+        >
+          <BookmarkCheck className="w-3.5 h-3.5 text-[#e5a044] shrink-0" />
+          <span className="text-[10px] sm:text-xs whitespace-nowrap">
+            <span className="inline sm:hidden">Quy tắc</span>
+            <span className="hidden sm:inline">Quy Tắc</span>
+          </span>
+        </button>
+
+        {/* Tab 4: Đoạn Văn AI */}
         <button
           onClick={() => setActiveTab('stories')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 sm:flex-none shrink-0 min-w-[70px] sm:min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
             activeTab === 'stories'
               ? 'bg-[#df5343] text-white shadow-md font-bold'
               : 'text-[#8e837a] hover:text-[#f5ede4] hover:bg-[#241e1a]'
@@ -234,10 +250,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
           </span>
         </button>
 
-        {/* Tab 4: Kiểm Tra Nhanh */}
+        {/* Tab 5: Kiểm Tra Nhanh */}
         <button
           onClick={() => setActiveTab('quiz')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 sm:flex-none shrink-0 min-w-[70px] sm:min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
             activeTab === 'quiz'
               ? 'bg-[#df5343] text-white shadow-md font-bold'
               : 'text-[#8e837a] hover:text-[#f5ede4] hover:bg-[#241e1a]'
@@ -250,10 +266,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
           </span>
         </button>
 
-        {/* Tab 5: Tập Viết Nét */}
+        {/* Tab 6: Tập Viết Nét */}
         <button
           onClick={() => setActiveTab('writer')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
+          className={`flex-1 sm:flex-none shrink-0 min-w-[70px] sm:min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
             activeTab === 'writer'
               ? 'bg-[#df5343] text-white shadow-md font-bold'
               : 'text-[#8e837a] hover:text-[#f5ede4] hover:bg-[#241e1a]'

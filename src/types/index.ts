@@ -49,6 +49,8 @@ export interface DatabaseSchema {
   words: Word[];
   users: UserProfile[];
   userProgress: Record<string, Record<string, UserWordProgress>>; // userId -> wordId -> progress
+  settings?: any;
+  rules?: ChineseRule[];
 }
 
 export type StudyDirection = 'hanzi-to-meaning' | 'meaning-to-hanzi' | 'audio-to-hanzi';
@@ -133,3 +135,57 @@ export interface StudyStats {
   totalReviewsToday: number;
   masteredCount: number;
 }
+
+export type RuleCategory =
+  | 'pronunciation'
+  | 'time_numbers'
+  | 'grammar'
+  | 'vocabulary'
+  | 'writing'
+  | 'other';
+
+export interface RuleExample {
+  id?: string;
+  chinese: string;
+  pinyin: string;
+  vietnamese: string;
+  note?: string;
+}
+
+export interface RulePracticeQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+  type?: 'pronunciation' | 'grammar' | 'application';
+}
+
+export interface ChineseRule {
+  id: string;
+  title: string;
+  category: RuleCategory;
+  formula?: string;
+  summary: string;
+  detail: string;
+  examples: RuleExample[];
+  exceptions?: string;
+  tags: string[];
+  isBuiltIn?: boolean;
+  isMastered?: boolean;
+  reviewCount?: number;
+  correctCount?: number;
+  wrongCount?: number;
+  createdAt: number;
+  updatedAt?: number;
+  practiceQuestions?: RulePracticeQuestion[];
+}
+
+export interface UserRuleProgress {
+  isMastered: boolean;
+  reviewCount: number;
+  correctCount: number;
+  wrongCount: number;
+  lastTested?: number;
+}
+

@@ -1,9 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { Word, UserProfile, UserWordProgress, AppSettings, StudyStats } from '../types';
+import { Word, UserProfile, UserWordProgress, AppSettings, StudyStats, ChineseRule } from '../types';
+import { CHINESE_RULES_STARTER_DATA } from '../data/chineseRulesStarterData';
 import { soundEffects } from '../services/soundEffects';
 import { ApiService } from '../services/apiService';
 import { GeminiService } from '../services/geminiService';
 import { tts } from '../services/ttsService';
+
+export type AppTabType = 'study' | 'words' | 'rules' | 'stories' | 'quiz' | 'writer';
 
 interface AppContextType {
   // Word & Study
@@ -15,6 +18,17 @@ interface AppContextType {
   starredWordsCount: number;
   hsk1WordsCount: number;
   customWordsCount: number;
+
+  // Chinese Rules (Quy tắc tiếng Trung)
+  rules: ChineseRule[];
+  rulesCount: number;
+  masteredRulesCount: number;
+  addRule: (rule: Partial<ChineseRule>) => Promise<ChineseRule>;
+  updateRule: (id: string, updates: Partial<ChineseRule>) => Promise<void>;
+  deleteRule: (id: string) => Promise<void>;
+  toggleRuleMastered: (id: string) => Promise<void>;
+  recordRuleTest: (ruleId: string, isCorrect: boolean) => Promise<void>;
+  resetRulesToDefault: () => Promise<void>;
 
   // User management
   currentUser: UserProfile | null;
@@ -41,8 +55,8 @@ interface AppContextType {
   settings: AppSettings;
   updateSettings: (newSettings: Partial<AppSettings>) => void;
   stats: StudyStats;
-  activeTab: 'study' | 'words' | 'stories' | 'quiz' | 'writer';
-  setActiveTab: (tab: 'study' | 'words' | 'stories' | 'quiz' | 'writer') => void;
+  activeTab: AppTabType;
+  setActiveTab: (tab: AppTabType) => void;
 
   // Backup
   exportData: () => string;
@@ -93,6 +107,7 @@ export const getEffectiveStreak = (user: UserProfile | null): number => {
 const STORAGE_KEYS = {
   CURRENT_USER_ID: 'zhongwen_current_user_id',
   FALLBACK_WORDS: 'zhongwen_fallback_words',
+  FALLBACK_RULES: 'zhongwen_fallback_rules',
   FALLBACK_USERS: 'zhongwen_fallback_users',
   FALLBACK_PROGRESS: 'zhongwen_fallback_progress',
   SETTINGS: 'zhongwen_settings'
@@ -101,24 +116,25 @@ const STORAGE_KEYS = {
 const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const getTabFromHash = (): 'study' | 'words' | 'stories' | 'quiz' | 'writer' => {
+  const getTabFromHash = (): AppTabType => {
     const raw = window.location.hash.replace(/^#\/?/, '').toLowerCase();
-    const validTabs: Array<'study' | 'words' | 'stories' | 'quiz' | 'writer'> = ['study', 'words', 'stories', 'quiz', 'writer'];
+    const validTabs: AppTabType[] = ['study', 'words', 'rules', 'stories', 'quiz', 'writer'];
     if (validTabs.includes(raw as any)) {
-      return raw as any;
+      return raw as AppTabType;
     }
     return 'study';
   };
 
   // Navigation Hash State
-  const [activeTab, setActiveTabState] = useState<'study' | 'words' | 'stories' | 'quiz' | 'writer'>(() => {
+  const [activeTab, setActiveTabState] = useState<AppTabType>(() => {
     return getTabFromHash();
   });
 
-  const setActiveTab = useCallback((tab: 'study' | 'words' | 'stories' | 'quiz' | 'writer') => {
+  const setActiveTab = useCallback((tab: AppTabType) => {
     setActiveTabState(tab);
     window.location.hash = tab;
   }, []);
+
 
   // Listen for browser Back/Forward hash navigation
   useEffect(() => {
@@ -139,6 +155,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // ignore
     }
     return [];
+  });
+
+  // Chinese Rules (Quy tắc tiếng Trung)
+  const [rules, setRules] = useState<ChineseRule[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.FALLBACK_RULES);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return CHINESE_RULES_STARTER_DATA;
   });
 
   // Users list (purely from MongoDB)
@@ -207,6 +237,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (dbData.words && Array.isArray(dbData.words)) {
           setSharedWords(dbData.words);
         }
+        if (dbData.rules && Array.isArray(dbData.rules) && dbData.rules.length > 0) {
+          setRules(dbData.rules);
+        }
         if (dbData.users && Array.isArray(dbData.users) && dbData.users.length > 0) {
           setUsers(dbData.users);
           const savedId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
@@ -229,6 +262,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.FALLBACK_WORDS, JSON.stringify(sharedWords));
   }, [sharedWords]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.FALLBACK_RULES, JSON.stringify(rules));
+  }, [rules]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.FALLBACK_USERS, JSON.stringify(users));
@@ -346,6 +383,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Cần ôn = các từ Chưa thuộc
   const dueWordsCount = unmasteredWordsCount;
+
+  // Rules Counts
+  const rulesCount = rules.length;
+  const masteredRulesCount = rules.filter(r => r.isMastered).length;
+
 
   // Add Word (Shared for all users - Prevent Duplicate Hanzis)
   const addWord = useCallback(async (newWord: Partial<Word>): Promise<Word> => {
@@ -690,6 +732,125 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // ==================== CHINESE RULES ACTION HANDLERS ====================
+
+  // Add new rule
+  const addRule = useCallback(async (ruleData: Partial<ChineseRule>): Promise<ChineseRule> => {
+    const now = Date.now();
+    const newRule: ChineseRule = {
+      id: ruleData.id || `rule-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      title: ruleData.title?.trim() || 'Quy tắc mới',
+      category: ruleData.category || 'grammar',
+      formula: ruleData.formula?.trim() || '',
+      summary: ruleData.summary?.trim() || '',
+      detail: ruleData.detail?.trim() || '',
+      examples: Array.isArray(ruleData.examples) ? ruleData.examples : [],
+      exceptions: ruleData.exceptions?.trim() || '',
+      tags: Array.isArray(ruleData.tags) ? ruleData.tags : [],
+      isBuiltIn: false,
+      isMastered: false,
+      reviewCount: 0,
+      correctCount: 0,
+      wrongCount: 0,
+      practiceQuestions: Array.isArray(ruleData.practiceQuestions) ? ruleData.practiceQuestions : [],
+      createdAt: now,
+      updatedAt: now
+    };
+
+    // Optimistic UI update
+    setRules(prev => [newRule, ...prev]);
+
+    // Background sync to server API
+    try {
+      const serverRule = await ApiService.addRule(newRule);
+      if (serverRule) {
+        setRules(prev => prev.map(r => r.id === newRule.id ? serverRule : r));
+      }
+    } catch (err) {
+      console.warn('[AppContext] Failed to sync rule to API, preserved locally:', err);
+    }
+
+    return newRule;
+  }, []);
+
+  // Update rule
+  const updateRule = useCallback(async (id: string, updates: Partial<ChineseRule>) => {
+    setRules(prev => prev.map(r => r.id === id ? { ...r, ...updates, updatedAt: Date.now() } : r));
+    try {
+      await ApiService.updateRule(id, updates);
+    } catch (err) {
+      console.warn('[AppContext] Failed to update rule on API:', err);
+    }
+  }, []);
+
+  // Delete rule
+  const deleteRule = useCallback(async (id: string) => {
+    setRules(prev => prev.filter(r => r.id !== id));
+    try {
+      await ApiService.deleteRule(id);
+    } catch (err) {
+      console.warn('[AppContext] Failed to delete rule on API:', err);
+    }
+  }, []);
+
+  // Toggle rule mastered status
+  const toggleRuleMastered = useCallback(async (id: string) => {
+    let targetMastered = false;
+    setRules(prev => prev.map(r => {
+      if (r.id === id) {
+        targetMastered = !r.isMastered;
+        return { ...r, isMastered: targetMastered, updatedAt: Date.now() };
+      }
+      return r;
+    }));
+
+    try {
+      await ApiService.updateRuleProgress(id, targetMastered);
+    } catch (err) {
+      console.warn('[AppContext] Failed to sync rule progress to API:', err);
+    }
+  }, []);
+
+  // Record test practice result for a rule
+  const recordRuleTest = useCallback(async (ruleId: string, isCorrect: boolean) => {
+    setRules(prev => prev.map(r => {
+      if (r.id === ruleId) {
+        const revCount = (r.reviewCount || 0) + 1;
+        const corCount = (r.correctCount || 0) + (isCorrect ? 1 : 0);
+        const wrgCount = (r.wrongCount || 0) + (isCorrect ? 0 : 1);
+        const isMastered = r.isMastered || (corCount >= 3 && corCount / revCount >= 0.7);
+        return {
+          ...r,
+          reviewCount: revCount,
+          correctCount: corCount,
+          wrongCount: wrgCount,
+          isMastered,
+          updatedAt: Date.now()
+        };
+      }
+      return r;
+    }));
+
+    try {
+      await ApiService.updateRuleProgress(ruleId, undefined, isCorrect);
+    } catch (err) {
+      console.warn('[AppContext] Failed to record rule test to API:', err);
+    }
+  }, []);
+
+  // Reset rules to starter defaults
+  const resetRulesToDefault = useCallback(async () => {
+    setRules(CHINESE_RULES_STARTER_DATA);
+    try {
+      const serverRules = await ApiService.resetRules();
+      if (serverRules && serverRules.length > 0) {
+        setRules(serverRules);
+      }
+    } catch (err) {
+      console.warn('[AppContext] Failed to reset rules via API:', err);
+    }
+  }, []);
+
   // Update Settings
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
@@ -702,6 +863,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         version: '2.0',
         exportedAt: new Date().toISOString(),
         sharedWords,
+        rules,
         users,
         allUserProgress,
         settings
@@ -709,7 +871,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       null,
       2
     );
-  }, [sharedWords, users, allUserProgress, settings]);
+  }, [sharedWords, rules, users, allUserProgress, settings]);
 
   // Import JSON with automatic database sync
   const importData = useCallback((jsonData: string): boolean => {
@@ -719,6 +881,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (Array.isArray(incomingWords) && incomingWords.length > 0) {
         setSharedWords(incomingWords);
         ApiService.addBatchWords(incomingWords).catch(() => {});
+      }
+      if (Array.isArray(parsed.rules) && parsed.rules.length > 0) {
+        setRules(parsed.rules);
       }
       if (Array.isArray(parsed.users) && parsed.users.length > 0) {
         setUsers(parsed.users);
@@ -769,6 +934,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         starredWordsCount,
         hsk1WordsCount,
         customWordsCount,
+
+        rules,
+        rulesCount,
+        masteredRulesCount,
+        addRule,
+        updateRule,
+        deleteRule,
+        toggleRuleMastered,
+        recordRuleTest,
+        resetRulesToDefault,
 
         currentUser,
         users,
