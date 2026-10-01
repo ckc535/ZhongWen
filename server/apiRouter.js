@@ -2,6 +2,7 @@ import express from 'express';
 import { connectToDatabase } from './mongodb.js';
 import { HSK1_ALL_LESSONS } from './hsk1StarterData.js';
 import { CHINESE_RULES_STARTER_DATA } from './chineseRulesStarterData.js';
+import { CHINESE_MEASURE_WORDS_STARTER_DATA } from './chineseMeasureWordsStarterData.js';
 
 export const apiRouter = express();
 
@@ -102,12 +103,13 @@ router.get('/tts', async (req, res) => {
 router.get('/data', async (req, res) => {
   try {
     const { db } = await connectToDatabase();
-    const [words, users, progressList, settingsDoc, dbRules] = await Promise.all([
+    const [words, users, progressList, settingsDoc, dbRules, dbMeasureWords] = await Promise.all([
       db.collection('words').find({}, { projection: { _id: 0 } }).sort({ createdAt: -1, _id: -1 }).toArray(),
       db.collection('users').find({}, { projection: { _id: 0 } }).toArray(),
       db.collection('user_progress').find({}, { projection: { _id: 0 } }).toArray(),
       db.collection('settings').findOne({ id: 'app_settings' }, { projection: { _id: 0 } }),
-      db.collection('rules').find({}, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray()
+      db.collection('rules').find({}, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray(),
+      db.collection('measure_words').find({}, { projection: { _id: 0 } }).sort({ order: 1, createdAt: 1 }).toArray()
     ]);
 
     // Map user progress to { [userId]: { [wordId]: progress } }
@@ -131,13 +133,15 @@ router.get('/data', async (req, res) => {
     }
 
     const rules = (dbRules && dbRules.length > 0) ? dbRules : CHINESE_RULES_STARTER_DATA;
+    const measureWords = (dbMeasureWords && dbMeasureWords.length > 0) ? dbMeasureWords : CHINESE_MEASURE_WORDS_STARTER_DATA;
 
     res.json({
       words,
       users,
       userProgress,
       settings: settingsDoc?.settings || null,
-      rules
+      rules,
+      measureWords
     });
   } catch (err) {
     console.error('[API /data] Error:', err);
@@ -778,6 +782,169 @@ router.post('/rules/reset-seed', async (req, res) => {
   } catch (err) {
     console.error('[API POST /rules/reset-seed] Error:', err);
     res.status(500).json({ error: 'Failed to reset rules', details: err.message });
+  }
+});
+
+// ==================== 15.2. CHINESE MEASURE WORDS (LƯỢNG TỪ TIẾNG TRUNG) ====================
+
+// Get all measure words (Sorted by order ascending, then createdAt)
+router.get('/measure-words', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    let measureWords = await db.collection('measure_words')
+      .find({}, { projection: { _id: 0 } })
+      .sort({ order: 1, createdAt: 1 })
+      .toArray();
+
+    if (!measureWords || measureWords.length === 0) {
+      await db.collection('measure_words').insertMany(CHINESE_MEASURE_WORDS_STARTER_DATA, { ordered: false });
+      measureWords = CHINESE_MEASURE_WORDS_STARTER_DATA;
+    }
+
+    res.json(measureWords);
+  } catch (err) {
+    console.error('[API /measure-words] Error:', err);
+    res.status(500).json({ error: 'Failed to fetch measure words', details: err.message });
+  }
+});
+
+// Add a new measure word
+router.post('/measure-words', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const mwData = req.body;
+    const word = mwData.word?.trim() || '';
+
+    if (!word) {
+      return res.status(400).json({ error: 'Lượng từ (chữ Hán) không được để trống' });
+    }
+
+    const now = Date.now();
+    const newMw = {
+      id: mwData.id || `mw-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      word,
+      pinyin: mwData.pinyin?.trim() || '',
+      vietnamese: mwData.vietnamese?.trim() || '',
+      category: mwData.category || 'objects',
+      commonLevel: mwData.commonLevel || 'essential',
+      explanation: mwData.explanation?.trim() || '',
+      pairedNouns: Array.isArray(mwData.pairedNouns) ? mwData.pairedNouns : [],
+      collocations: Array.isArray(mwData.collocations) ? mwData.collocations : [],
+      practiceQuestions: Array.isArray(mwData.practiceQuestions) ? mwData.practiceQuestions : [],
+      tips: mwData.tips?.trim() || '',
+      sealChar: mwData.sealChar?.trim() || word[0] || '量',
+      order: Number(mwData.order) || 99,
+      isBuiltIn: Boolean(mwData.isBuiltIn),
+      isMastered: Boolean(mwData.isMastered),
+      reviewCount: Number(mwData.reviewCount) || 0,
+      correctCount: Number(mwData.correctCount) || 0,
+      wrongCount: Number(mwData.wrongCount) || 0,
+      createdAt: mwData.createdAt || now,
+      updatedAt: now
+    };
+
+    await db.collection('measure_words').insertOne(newMw);
+    const { _id, ...cleanMw } = newMw;
+    res.status(201).json({ success: true, measureWord: cleanMw });
+  } catch (err) {
+    console.error('[API POST /measure-words] Error:', err);
+    res.status(500).json({ error: 'Failed to add measure word', details: err.message });
+  }
+});
+
+// Update a measure word
+router.put('/measure-words/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = { ...req.body };
+    delete updates._id;
+    delete updates.id;
+    updates.updatedAt = Date.now();
+
+    const { db } = await connectToDatabase();
+    const result = await db.collection('measure_words').findOneAndUpdate(
+      { id },
+      { $set: updates },
+      { returnDocument: 'after', projection: { _id: 0 } }
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'Measure word not found' });
+    }
+
+    res.json({ success: true, measureWord: result });
+  } catch (err) {
+    console.error('[API PUT /measure-words/:id] Error:', err);
+    res.status(500).json({ error: 'Failed to update measure word', details: err.message });
+  }
+});
+
+// Delete a measure word
+router.delete('/measure-words/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { db } = await connectToDatabase();
+    await db.collection('measure_words').deleteOne({ id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API DELETE /measure-words/:id] Error:', err);
+    res.status(500).json({ error: 'Failed to delete measure word', details: err.message });
+  }
+});
+
+// Update measure word quiz/mastery progress
+router.post('/measure-words/:id/progress', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isMastered, isCorrect } = req.body;
+    const { db } = await connectToDatabase();
+
+    const incUpdates = { reviewCount: 1 };
+    if (isCorrect === true) {
+      incUpdates.correctCount = 1;
+    } else if (isCorrect === false) {
+      incUpdates.wrongCount = 1;
+    }
+
+    const setUpdates = {
+      lastTested: Date.now(),
+      updatedAt: Date.now()
+    };
+    if (isMastered !== undefined) {
+      setUpdates.isMastered = Boolean(isMastered);
+    }
+
+    const result = await db.collection('measure_words').findOneAndUpdate(
+      { id },
+      {
+        $inc: incUpdates,
+        $set: setUpdates
+      },
+      { returnDocument: 'after', projection: { _id: 0 } }
+    );
+
+    res.json({ success: true, measureWord: result });
+  } catch (err) {
+    console.error('[API POST /measure-words/:id/progress] Error:', err);
+    res.status(500).json({ error: 'Failed to update measure word progress', details: err.message });
+  }
+});
+
+// Reset measure words to starter default
+router.post('/measure-words/reset-seed', async (req, res) => {
+  try {
+    const { db } = await connectToDatabase();
+    const mwCol = db.collection('measure_words');
+    await mwCol.deleteMany({});
+    await mwCol.insertMany(CHINESE_MEASURE_WORDS_STARTER_DATA, { ordered: false });
+    res.json({
+      success: true,
+      count: CHINESE_MEASURE_WORDS_STARTER_DATA.length,
+      measureWords: CHINESE_MEASURE_WORDS_STARTER_DATA
+    });
+  } catch (err) {
+    console.error('[API POST /measure-words/reset-seed] Error:', err);
+    res.status(500).json({ error: 'Failed to reset measure words', details: err.message });
   }
 });
 

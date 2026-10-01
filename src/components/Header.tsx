@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { GeminiService, AiConnectionState } from '../services/geminiService';
-import { BookOpen, Sparkles, Layers, Zap, PenTool, Settings, Flame, CheckCircle2, XCircle, Cpu, BookmarkCheck } from 'lucide-react';
+import { BookOpen, Sparkles, Layers, Zap, PenTool, Settings, Flame, CheckCircle2, XCircle, Cpu, BookmarkCheck, Boxes } from 'lucide-react';
 
 interface HeaderProps {
   onOpenUserModal?: () => void;
@@ -184,8 +184,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
         </div>
       </div>
 
-      {/* Dynamic Responsive Navigation Bar (Smooth scroll on mobile, 6-col grid on desktop) */}
-      <nav className="w-full flex items-center gap-1 p-1 sm:p-1.5 rounded-2xl bg-[#1a1613] border border-[#2e2621] mb-3 shadow-sm overflow-x-auto no-scrollbar sm:grid sm:grid-cols-6">
+      {/* Dynamic Responsive Navigation Bar (Smooth scroll on mobile, 7-col grid on desktop) */}
+      <nav className="w-full flex items-center gap-1 p-1 sm:p-1.5 rounded-2xl bg-[#1a1613] border border-[#2e2621] mb-3 shadow-sm overflow-x-auto no-scrollbar sm:grid sm:grid-cols-7">
         {/* Tab 1: Ôn Flashcard */}
         <button
           onClick={() => setActiveTab('study')}
@@ -231,6 +231,22 @@ export const Header: React.FC<HeaderProps> = ({ onOpenUserModal, onOpenSettingsM
           <span className="text-[10px] sm:text-xs whitespace-nowrap">
             <span className="inline sm:hidden">Quy tắc</span>
             <span className="hidden sm:inline">Quy Tắc</span>
+          </span>
+        </button>
+
+        {/* Tab 4: Lượng Từ Tiếng Trung */}
+        <button
+          onClick={() => setActiveTab('measure_words')}
+          className={`flex-1 sm:flex-none shrink-0 min-w-[70px] sm:min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 py-1.5 sm:py-2.5 px-1 rounded-xl transition-all cursor-pointer ${
+            activeTab === 'measure_words'
+              ? 'bg-[#df5343] text-white shadow-md font-bold'
+              : 'text-[#8e837a] hover:text-[#f5ede4] hover:bg-[#241e1a]'
+          }`}
+        >
+          <Boxes className="w-3.5 h-3.5 text-[#5eb786] shrink-0" />
+          <span className="text-[10px] sm:text-xs whitespace-nowrap">
+            <span className="inline sm:hidden">Lượng từ</span>
+            <span className="hidden sm:inline">Lượng Từ</span>
           </span>
         </button>
 

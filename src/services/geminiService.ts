@@ -1,4 +1,4 @@
-import { Word, StoryPassage, DetectedNewWord, StoryToken, ChineseRule } from '../types';
+import { Word, StoryPassage, DetectedNewWord, StoryToken, ChineseRule, ChineseMeasureWord } from '../types';
 
 export type AiConnectionState = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -1139,6 +1139,226 @@ Yêu cầu BẮT BUỘC:
             ],
             correctAnswer: 'Tuân thủ theo đúng trật tự ngữ pháp và sắc thái ngữ cảnh',
             explanation: `Cần nắm rõ bản chất quy tắc "${raw}" để áp dụng chính xác trong từng văn cảnh.`
+          }
+        ]
+      };
+    }
+  }
+
+  // 9. Auto-Generate / Lookup Measure Word from Noun or Measure Word Keyword
+  public static async autoGenerateMeasureWord(
+    inputPrompt: string,
+    apiKey?: string,
+    model?: string
+  ): Promise<Partial<ChineseMeasureWord>> {
+    const raw = inputPrompt?.trim();
+    if (!raw) {
+      throw new Error('Vui lòng nhập danh từ hoặc lượng từ cần tra cứu.');
+    }
+
+    const prompt = `Bạn là chuyên gia ngôn ngữ học và giảng dạy tiếng Trung (HSK 1-6, từ vựng và ngữ pháp) hàng đầu.
+Người dùng đang tra cứu lượng từ cho danh từ hoặc tìm hiểu về lượng từ tiếng Trung với từ khoá: "${raw}".
+
+NHIỆM VỤ:
+1. Nếu người dùng nhập DANH TỪ (ví dụ: "áo", "con mèo", "cái bàn", "chiếc xe", "bút", "cá", "chuối", "nhẫn", "衣服", "雨伞"...):
+   - Hãy xác định LƯỢNG TỪ CHÍNH XÁC & PHỔ BIẾN NHẤT cho danh từ đó trong tiếng Trung (ví dụ: áo -> 件, ô -> 把, cá -> 条, mèo -> 只, xe -> 辆).
+2. Nếu người dùng nhập LƯỢNG TỪ (ví dụ: "把", "张", "条", "bǎ", "tiáo", "cái có cán cầm"...):
+   - Hãy giải thích toàn diện lượng từ đó, liệt kê đầy đủ các danh từ đi kèm.
+
+Hãy biên soạn đầy đủ, sư phạm và dễ hiểu nhất theo đúng định dạng JSON sau:
+{
+  "word": "Chữ Hán của lượng từ (ví dụ: 把, 张, 条, 件, 辆, 只, 支...)",
+  "pinyin": "Pinyin chuẩn có dấu thanh (ví dụ: bǎ)",
+  "vietnamese": "Dịch nghĩa tiếng Việt súc tích của lượng từ (ví dụ: Chiếc, cái (dụng cụ có cán cầm))",
+  "category": "objects" | "animals" | "clothing" | "vehicles" | "plants_food" | "body_abstract" | "general",
+  "commonLevel": "essential" | "intermediate" | "advanced",
+  "explanation": "Giải thích chi tiết về phạm vi áp dụng, tiêu chí lựa chọn lượng từ này (đặc điểm hình dáng, tính chất đồ vật)",
+  "pairedNouns": [
+    {
+      "nounHanzi": "Chữ Hán danh từ",
+      "nounPinyin": "Pinyin danh từ",
+      "nounVietnamese": "Nghĩa tiếng Việt",
+      "emoji": "Emoji tương ứng (ví dụ: ☂️, 🐱, 🚗)",
+      "commonRank": 1
+    }
+  ],
+  "collocations": [
+    {
+      "phraseHanzi": "Cụm lượng từ + danh từ hoàn chỉnh (ví dụ: 一把雨伞)",
+      "phrasePinyin": "Pinyin cụm từ (ví dụ: yì bǎ yǔsǎn)",
+      "phraseVietnamese": "Dịch cụm từ (ví dụ: một chiếc ô / dù)",
+      "context": "Ngữ cảnh hoặc ví dụ câu thực tế"
+    }
+  ],
+  "tips": "Mẹo ghi nhớ nhanh hoặc cách phân biệt để không nhầm lẫn",
+  "sealChar": "1 chữ Hán đại diện làm con dấu ấn triện (thường là chính chữ lượng từ đó, ví dụ: 把)",
+  "practiceQuestions": [
+    {
+      "id": "mwq_1",
+      "question": "Câu hỏi trắc nghiệm kiểm tra lượng từ này (ví dụ: Lượng từ thích hợp cho '雨伞' là gì?)",
+      "options": ["一把", "一张", "一条", "一件"],
+      "correctAnswer": "一把",
+      "explanation": "Giải thích vì sao chọn đáp án này"
+    }
+  ]
+}
+
+YÊU CẦU BẮT BUỘC:
+- Trả về JSON thuần tuý, không markdown bên ngoài.
+- Cung cấp ít nhất 4-6 danh từ đi kèm ("pairedNouns").
+- Cung cấp ít nhất 3 cụm từ/câu phối hợp ("collocations").
+- Cung cấp 1-2 câu trắc nghiệm thực hành ("practiceQuestions").
+- "category" bắt buộc thuộc: "objects", "animals", "clothing", "vehicles", "plants_food", "body_abstract", "general".`;
+
+    try {
+      const jsonText = await GeminiService.callAiEngineStream(apiKey, model, prompt, true);
+      const parsed = GeminiService.safeExtractAndParseJson(jsonText);
+
+      return {
+        word: parsed.word || raw,
+        pinyin: parsed.pinyin || '',
+        vietnamese: parsed.vietnamese || '',
+        category: parsed.category || 'objects',
+        commonLevel: parsed.commonLevel || 'essential',
+        explanation: parsed.explanation || '',
+        pairedNouns: Array.isArray(parsed.pairedNouns) && parsed.pairedNouns.length > 0 ? parsed.pairedNouns : [],
+        collocations: Array.isArray(parsed.collocations) && parsed.collocations.length > 0 ? parsed.collocations : [],
+        tips: parsed.tips || '',
+        sealChar: parsed.sealChar || parsed.word?.[0] || '量',
+        practiceQuestions: Array.isArray(parsed.practiceQuestions) ? parsed.practiceQuestions : []
+      };
+    } catch (err) {
+      console.warn('[GeminiService] AI Measure Word generation error, falling back to local dictionary:', err);
+      const lower = raw.toLowerCase();
+
+      // Check common keywords
+      if (lower.includes('áo') || lower.includes('quần áo') || lower.includes('yīfu') || lower.includes('衣服') || lower.includes('jiàn') || lower.includes('件')) {
+        return {
+          word: '件',
+          pinyin: 'jiàn',
+          vietnamese: 'Chiếc, cái, bộ, vụ (trang phục, sự việc)',
+          category: 'clothing',
+          commonLevel: 'essential',
+          explanation: 'Lượng từ dùng phổ biến nhất cho trang phục phần trên cơ thể (áo sơ mi, áo khoác, áo len) và các sự việc, công việc, hành lý.',
+          pairedNouns: [
+            { nounHanzi: '衣服', nounPinyin: 'yīfu', nounVietnamese: 'quần áo', emoji: '👕', commonRank: 1 },
+            { nounHanzi: '衬衫', nounPinyin: 'chènshān', nounVietnamese: 'áo sơ mi', emoji: '👔', commonRank: 2 },
+            { nounHanzi: '大衣', nounPinyin: 'dàyī', nounVietnamese: 'áo khoác măng tô', emoji: '🧥', commonRank: 3 },
+            { nounHanzi: '事', nounPinyin: 'shì', nounVietnamese: 'sự việc, chuyện', emoji: '📋', commonRank: 4 }
+          ],
+          collocations: [
+            { phraseHanzi: '一件衣服', phrasePinyin: 'yí jiàn yīfu', phraseVietnamese: 'một chiếc áo / bộ quần áo', context: 'Mua sắm trang phục hàng ngày' },
+            { phraseHanzi: '一件事', phrasePinyin: 'yí jiàn shì', phraseVietnamese: 'một sự việc / một chuyện', context: 'Kể chuyện hoặc giao việc' },
+            { phraseHanzi: '这件衬衫很合身', phrasePinyin: 'Zhè jiàn chènshān hěn héshēn', phraseVietnamese: 'Chiếc áo sơ mi này rất vừa vặn', context: 'Khen ngợi trang phục' }
+          ],
+          tips: 'Ghi nhớ: "Áo dùng 件 (jiàn), quần dùng 条 (tiáo)". 件 còn dùng cho các sự việc (一件事).',
+          sealChar: '件',
+          practiceQuestions: [
+            {
+              id: 'mwq_jian_1',
+              question: 'Lượng từ chuẩn xác cho từ "衣服" (quần áo) là gì?',
+              options: ['一件', '一条', '一把', '一张'],
+              correctAnswer: '一件',
+              explanation: 'Trang phục như áo sơ mi, áo khoác, quần áo nói chung dùng lượng từ "件" (jiàn).'
+            }
+          ]
+        };
+      }
+
+      if (lower.includes('ô') || lower.includes('dù') || lower.includes('cán') || lower.includes('cầm') || lower.includes('ghế') || lower.includes('dao') || lower.includes('bǎ') || lower.includes('把')) {
+        return {
+          word: '把',
+          pinyin: 'bǎ',
+          vietnamese: 'Cái, chiếc, con (dụng cụ có cán, tay cầm; nắm)',
+          category: 'objects',
+          commonLevel: 'essential',
+          explanation: 'Lượng từ "把" chuyên dùng cho những đồ vật có phần cán, tay cầm để nắm chặt (ô dù, ghế tựa, dao kéo, quạt, chìa khoá).',
+          pairedNouns: [
+            { nounHanzi: '雨伞', nounPinyin: 'yǔsǎn', nounVietnamese: 'ô, dù', emoji: '☂️', commonRank: 1 },
+            { nounHanzi: '椅子', nounPinyin: 'yǐzi', nounVietnamese: 'ghế tựa (có tay vịn/lưng tựa)', emoji: '🪑', commonRank: 2 },
+            { nounHanzi: '刀', nounPinyin: 'dāo', nounVietnamese: 'con dao (có chuôi/cán)', emoji: '🔪', commonRank: 3 },
+            { nounHanzi: '钥匙', nounPinyin: 'yàoshi', nounVietnamese: 'chìa khóa', emoji: '🔑', commonRank: 4 }
+          ],
+          collocations: [
+            { phraseHanzi: '一把雨伞', phrasePinyin: 'yì bǎ yǔsǎn', phraseVietnamese: 'một chiếc ô / một cây dù', context: 'Khi trời mưa' },
+            { phraseHanzi: '一把椅子', phrasePinyin: 'yì bǎ yǐzi', phraseVietnamese: 'một chiếc ghế tựa', context: 'Bố trí phòng khách' },
+            { phraseHanzi: '一把钥匙', phrasePinyin: 'yì bǎ yàoshi', phraseVietnamese: 'một chiếc chìa khóa', context: 'Mở cửa phòng' }
+          ],
+          tips: 'Cứ đồ vật nào "cầm nắm được bằng một tay có cán/chuôi/tay vịn" là dùng "把" (bǎ).',
+          sealChar: '把',
+          practiceQuestions: [
+            {
+              id: 'mwq_ba_1',
+              question: 'Điền lượng từ thích hợp: "下雨了，请带上______雨伞。"',
+              options: ['一把', '一张', '一条', '一只'],
+              correctAnswer: '一把',
+              explanation: 'Chiếc ô/dù có cán cầm nên dùng lượng từ "把" (bǎ).'
+            }
+          ]
+        };
+      }
+
+      if (lower.includes('bàn') || lower.includes('giấy') || lower.includes('vé') || lower.includes('ảnh') || lower.includes('phẳng') || lower.includes('zhāng') || lower.includes('张')) {
+        return {
+          word: '张',
+          pinyin: 'zhāng',
+          vietnamese: 'Tấm, tờ, chiếc, bức (vật có bề mặt phẳng mỏng hoặc mặt bàn, giường)',
+          category: 'objects',
+          commonLevel: 'essential',
+          explanation: 'Lượng từ "张" dùng cho các vật mỏng phẳng mở rộng (tờ giấy, bức tranh, tấm vé, thẻ card) và đồ nội thất có mặt phẳng lớn (bàn, giường).',
+          pairedNouns: [
+            { nounHanzi: '纸', nounPinyin: 'zhǐ', nounVietnamese: 'tờ giấy', emoji: '📄', commonRank: 1 },
+            { nounHanzi: '桌子', nounPinyin: 'zhuōzi', nounVietnamese: 'cái bàn', emoji: '🪵', commonRank: 2 },
+            { nounHanzi: '照片', nounPinyin: 'zhàopiàn', nounVietnamese: 'bức ảnh', emoji: '🖼️', commonRank: 3 },
+            { nounHanzi: '票', nounPinyin: 'piào', nounVietnamese: 'tấm vé (tàu/xe/phim)', emoji: '🎫', commonRank: 4 }
+          ],
+          collocations: [
+            { phraseHanzi: '一张桌子', phrasePinyin: 'yì zhāng zhuōzi', phraseVietnamese: 'một cái bàn', context: 'Đồ dùng học tập hoặc văn phòng' },
+            { phraseHanzi: '一张白纸', phrasePinyin: 'yì zhāng bái zhǐ', phraseVietnamese: 'một tờ giấy trắng', context: 'Ghi chép' },
+            { phraseHanzi: '一张电影票', phrasePinyin: 'yì zhāng diànyǐng piào', phraseVietnamese: 'một tấm vé xem phim', context: 'Đi xem phim' }
+          ],
+          tips: 'Cứ đồ vật "dẹt, phẳng, mỏng hoặc có mặt bàn phẳng" là dùng "张" (zhāng). Bàn dùng 张, nhưng ghế dùng 把!',
+          sealChar: '张',
+          practiceQuestions: [
+            {
+              id: 'mwq_zhang_1',
+              question: 'Lượng từ chính xác cho "桌子" (cái bàn) là gì?',
+              options: ['一张', '一把', '一条', '一只'],
+              correctAnswer: '一张',
+              explanation: 'Bàn có mặt phẳng rộng nên dùng "张" (zhāng), trong khi ghế có lưng tựa/tay vịn dùng "把" (bǎ).'
+            }
+          ]
+        };
+      }
+
+      // Default smart structured fallback
+      return {
+        word: raw.length <= 2 ? raw : '个',
+        pinyin: raw.length <= 2 ? '' : 'gè',
+        vietnamese: `Lượng từ cho "${raw}"`,
+        category: 'general',
+        commonLevel: 'essential',
+        explanation: `Lượng từ chuẩn xác đi kèm với danh từ "${raw}" trong tiếng Trung, giúp tạo cụm danh từ hoàn chỉnh Số từ + Lượng từ + Danh từ.`,
+        pairedNouns: [
+          { nounHanzi: raw, nounPinyin: '', nounVietnamese: raw, emoji: '✨', commonRank: 1 }
+        ],
+        collocations: [
+          { phraseHanzi: `一[量词]${raw}`, phrasePinyin: '', phraseVietnamese: `Một ... ${raw}`, context: 'Giao tiếp hàng ngày' }
+        ],
+        tips: 'Trong tiếng Trung, trước danh từ khi đếm số lượng bắt buộc phải có Lượng từ ở giữa (Số từ + Lượng từ + Danh từ).',
+        sealChar: '量',
+        practiceQuestions: [
+          {
+            id: 'mwq_def_1',
+            question: `Cấu trúc đếm số lượng danh từ chuẩn trong tiếng Trung là gì?`,
+            options: [
+              'Số từ + Lượng từ + Danh từ',
+              'Số từ + Danh từ (không cần lượng từ)',
+              'Danh từ + Lượng từ + Số từ',
+              'Lượng từ + Danh từ + Số từ'
+            ],
+            correctAnswer: 'Số từ + Lượng từ + Danh từ',
+            explanation: 'Quy tắc vàng trong tiếng Trung: bắt buộc phải có Lượng từ đứng giữa Số từ và Danh từ (ví dụ: 一个人, 一本书, 一辆车).'
           }
         ]
       };

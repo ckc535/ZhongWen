@@ -1,6 +1,7 @@
 import { MongoClient } from 'mongodb';
 import { HSK1_ALL_LESSONS } from './hsk1StarterData.js';
 import { CHINESE_RULES_STARTER_DATA } from './chineseRulesStarterData.js';
+import { CHINESE_MEASURE_WORDS_STARTER_DATA } from './chineseMeasureWordsStarterData.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -89,9 +90,10 @@ export async function connectToDatabase() {
 
     console.log(`[MongoDB] 🟢 Kết nối thành công tới database: "${DB_NAME}"`);
 
-    // Ensure starter words, rules and indexes
+    // Ensure starter words, rules, measure words and indexes
     seedWordsIfEmpty(db).catch(err => console.error('[MongoDB Seeding Error]:', err));
     seedRulesIfEmpty(db).catch(err => console.error('[MongoDB Rules Seeding Error]:', err));
+    seedMeasureWordsIfEmpty(db).catch(err => console.error('[MongoDB Measure Words Seeding Error]:', err));
     ensureIndexes(db).catch(err => console.error('[MongoDB Index Error]:', err));
 
     return { client, db };
@@ -165,4 +167,25 @@ export async function seedRulesIfEmpty(db) {
     console.error('[MongoDB] Lỗi trong quá trình nạp quy tắc ban đầu:', err);
   }
 }
+
+/**
+ * Seed initial Chinese measure words (Lượng từ) if collection is empty
+ */
+export async function seedMeasureWordsIfEmpty(db) {
+  try {
+    const mwCol = db.collection('measure_words');
+    const count = await mwCol.countDocuments();
+
+    if (count === 0) {
+      console.log('[MongoDB] Đang nạp danh sách lượng từ tiếng Trung khởi đầu...');
+      if (CHINESE_MEASURE_WORDS_STARTER_DATA.length > 0) {
+        await mwCol.insertMany(CHINESE_MEASURE_WORDS_STARTER_DATA, { ordered: false });
+        console.log(`[MongoDB] ✅ Nạp thành công ${CHINESE_MEASURE_WORDS_STARTER_DATA.length} lượng từ khởi đầu.`);
+      }
+    }
+  } catch (err) {
+    console.error('[MongoDB] Lỗi trong quá trình nạp lượng từ ban đầu:', err);
+  }
+}
+
 

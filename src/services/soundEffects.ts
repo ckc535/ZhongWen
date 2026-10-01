@@ -145,6 +145,12 @@ class SoundEffectsService {
       // Ignore audio errors
     }
   }
+
+  // Aliases for learning actions
+  public playCorrect() { this.playSuccess(); }
+  public playIncorrect() { this.playWrong(); }
+  public playMastered() { this.playLevelUp(); }
+  public playReview() { this.playClick(); }
 }
 
 export const soundEffects = new SoundEffectsService();

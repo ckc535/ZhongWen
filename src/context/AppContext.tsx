@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { Word, UserProfile, UserWordProgress, AppSettings, StudyStats, ChineseRule } from '../types';
+import { Word, UserProfile, UserWordProgress, AppSettings, StudyStats, ChineseRule, ChineseMeasureWord } from '../types';
 import { CHINESE_RULES_STARTER_DATA } from '../data/chineseRulesStarterData';
+import { CHINESE_MEASURE_WORDS_STARTER_DATA } from '../data/chineseMeasureWordsStarterData';
 import { soundEffects } from '../services/soundEffects';
 import { ApiService } from '../services/apiService';
 import { GeminiService } from '../services/geminiService';
 import { tts } from '../services/ttsService';
 
-export type AppTabType = 'study' | 'words' | 'rules' | 'stories' | 'quiz' | 'writer';
+export type AppTabType = 'study' | 'words' | 'rules' | 'measure_words' | 'stories' | 'quiz' | 'writer';
 
 interface AppContextType {
   // Word & Study
@@ -29,6 +30,17 @@ interface AppContextType {
   toggleRuleMastered: (id: string) => Promise<void>;
   recordRuleTest: (ruleId: string, isCorrect: boolean) => Promise<void>;
   resetRulesToDefault: () => Promise<void>;
+
+  // Chinese Measure Words (Lượng từ tiếng Trung)
+  measureWords: ChineseMeasureWord[];
+  measureWordsCount: number;
+  masteredMeasureWordsCount: number;
+  addMeasureWord: (mw: Partial<ChineseMeasureWord>) => Promise<ChineseMeasureWord>;
+  updateMeasureWord: (id: string, updates: Partial<ChineseMeasureWord>) => Promise<void>;
+  deleteMeasureWord: (id: string) => Promise<void>;
+  toggleMeasureWordMastered: (id: string) => Promise<void>;
+  recordMeasureWordQuiz: (id: string, isCorrect: boolean) => Promise<void>;
+  resetMeasureWordsToDefault: () => Promise<void>;
 
   // User management
   currentUser: UserProfile | null;
@@ -108,6 +120,7 @@ const STORAGE_KEYS = {
   CURRENT_USER_ID: 'zhongwen_current_user_id',
   FALLBACK_WORDS: 'zhongwen_fallback_words',
   FALLBACK_RULES: 'zhongwen_fallback_rules',
+  FALLBACK_MEASURE_WORDS: 'zhongwen_fallback_measure_words',
   FALLBACK_USERS: 'zhongwen_fallback_users',
   FALLBACK_PROGRESS: 'zhongwen_fallback_progress',
   SETTINGS: 'zhongwen_settings'
@@ -118,7 +131,7 @@ const AppContext = createContext<AppContextType | null>(null);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getTabFromHash = (): AppTabType => {
     const raw = window.location.hash.replace(/^#\/?/, '').toLowerCase();
-    const validTabs: AppTabType[] = ['study', 'words', 'rules', 'stories', 'quiz', 'writer'];
+    const validTabs: AppTabType[] = ['study', 'words', 'rules', 'measure_words', 'stories', 'quiz', 'writer'];
     if (validTabs.includes(raw as any)) {
       return raw as AppTabType;
     }
@@ -169,6 +182,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // ignore
     }
     return CHINESE_RULES_STARTER_DATA;
+  });
+
+  // Chinese Measure Words (Lượng từ tiếng Trung)
+  const [measureWords, setMeasureWords] = useState<ChineseMeasureWord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.FALLBACK_MEASURE_WORDS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return CHINESE_MEASURE_WORDS_STARTER_DATA;
   });
 
   // Users list (purely from MongoDB)
@@ -240,6 +267,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (dbData.rules && Array.isArray(dbData.rules) && dbData.rules.length > 0) {
           setRules(dbData.rules);
         }
+        if (dbData.measureWords && Array.isArray(dbData.measureWords) && dbData.measureWords.length > 0) {
+          setMeasureWords(dbData.measureWords);
+        }
         if (dbData.users && Array.isArray(dbData.users) && dbData.users.length > 0) {
           setUsers(dbData.users);
           const savedId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
@@ -266,6 +296,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.FALLBACK_RULES, JSON.stringify(rules));
   }, [rules]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.FALLBACK_MEASURE_WORDS, JSON.stringify(measureWords));
+  }, [measureWords]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.FALLBACK_USERS, JSON.stringify(users));
@@ -387,6 +421,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Rules Counts
   const rulesCount = rules.length;
   const masteredRulesCount = rules.filter(r => r.isMastered).length;
+
+  // Measure Words Counts
+  const measureWordsCount = measureWords.length;
+  const masteredMeasureWordsCount = measureWords.filter(mw => mw.isMastered).length;
 
 
   // Add Word (Shared for all users - Prevent Duplicate Hanzis)
@@ -851,6 +889,126 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
+  // ==================== CHINESE MEASURE WORDS ACTION HANDLERS ====================
+
+  // Add new measure word
+  const addMeasureWord = useCallback(async (mwData: Partial<ChineseMeasureWord>): Promise<ChineseMeasureWord> => {
+    const now = Date.now();
+    const newMw: ChineseMeasureWord = {
+      id: mwData.id || `mw-${now}-${Math.random().toString(36).substring(2, 6)}`,
+      word: mwData.word?.trim() || '',
+      pinyin: mwData.pinyin?.trim() || '',
+      vietnamese: mwData.vietnamese?.trim() || '',
+      category: mwData.category || 'objects',
+      commonLevel: mwData.commonLevel || 'essential',
+      explanation: mwData.explanation?.trim() || '',
+      pairedNouns: Array.isArray(mwData.pairedNouns) ? mwData.pairedNouns : [],
+      collocations: Array.isArray(mwData.collocations) ? mwData.collocations : [],
+      practiceQuestions: Array.isArray(mwData.practiceQuestions) ? mwData.practiceQuestions : [],
+      tips: mwData.tips?.trim() || '',
+      sealChar: mwData.sealChar?.trim() || mwData.word?.[0] || '量',
+      order: Number(mwData.order) || 99,
+      isBuiltIn: false,
+      isMastered: false,
+      reviewCount: 0,
+      correctCount: 0,
+      wrongCount: 0,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    setMeasureWords(prev => [newMw, ...prev]);
+
+    try {
+      const serverMw = await ApiService.addMeasureWord(newMw);
+      if (serverMw) {
+        setMeasureWords(prev => prev.map(m => m.id === newMw.id ? serverMw : m));
+      }
+    } catch (err) {
+      console.warn('[AppContext] Failed to sync measure word to API:', err);
+    }
+
+    return newMw;
+  }, []);
+
+  // Update measure word
+  const updateMeasureWord = useCallback(async (id: string, updates: Partial<ChineseMeasureWord>) => {
+    setMeasureWords(prev => prev.map(m => m.id === id ? { ...m, ...updates, updatedAt: Date.now() } : m));
+    try {
+      await ApiService.updateMeasureWord(id, updates);
+    } catch (err) {
+      console.warn('[AppContext] Failed to update measure word on API:', err);
+    }
+  }, []);
+
+  // Delete measure word
+  const deleteMeasureWord = useCallback(async (id: string) => {
+    setMeasureWords(prev => prev.filter(m => m.id !== id));
+    try {
+      await ApiService.deleteMeasureWord(id);
+    } catch (err) {
+      console.warn('[AppContext] Failed to delete measure word on API:', err);
+    }
+  }, []);
+
+  // Toggle measure word mastered status
+  const toggleMeasureWordMastered = useCallback(async (id: string) => {
+    let targetMastered = false;
+    setMeasureWords(prev => prev.map(m => {
+      if (m.id === id) {
+        targetMastered = !m.isMastered;
+        return { ...m, isMastered: targetMastered, updatedAt: Date.now() };
+      }
+      return m;
+    }));
+
+    try {
+      await ApiService.updateMeasureWordProgress(id, targetMastered);
+    } catch (err) {
+      console.warn('[AppContext] Failed to sync measure word progress to API:', err);
+    }
+  }, []);
+
+  // Record quiz practice result for a measure word
+  const recordMeasureWordQuiz = useCallback(async (id: string, isCorrect: boolean) => {
+    setMeasureWords(prev => prev.map(m => {
+      if (m.id === id) {
+        const revCount = (m.reviewCount || 0) + 1;
+        const corCount = (m.correctCount || 0) + (isCorrect ? 1 : 0);
+        const wrgCount = (m.wrongCount || 0) + (isCorrect ? 0 : 1);
+        const isMastered = m.isMastered || (corCount >= 3 && corCount / revCount >= 0.7);
+        return {
+          ...m,
+          reviewCount: revCount,
+          correctCount: corCount,
+          wrongCount: wrgCount,
+          isMastered,
+          updatedAt: Date.now()
+        };
+      }
+      return m;
+    }));
+
+    try {
+      await ApiService.updateMeasureWordProgress(id, undefined, isCorrect);
+    } catch (err) {
+      console.warn('[AppContext] Failed to record measure word quiz to API:', err);
+    }
+  }, []);
+
+  // Reset measure words to starter defaults
+  const resetMeasureWordsToDefault = useCallback(async () => {
+    setMeasureWords(CHINESE_MEASURE_WORDS_STARTER_DATA);
+    try {
+      const serverMws = await ApiService.resetMeasureWords();
+      if (serverMws && serverMws.length > 0) {
+        setMeasureWords(serverMws);
+      }
+    } catch (err) {
+      console.warn('[AppContext] Failed to reset measure words via API:', err);
+    }
+  }, []);
+
   // Update Settings
   const updateSettings = useCallback((newSettings: Partial<AppSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
@@ -864,6 +1022,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         exportedAt: new Date().toISOString(),
         sharedWords,
         rules,
+        measureWords,
         users,
         allUserProgress,
         settings
@@ -871,7 +1030,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       null,
       2
     );
-  }, [sharedWords, rules, users, allUserProgress, settings]);
+  }, [sharedWords, rules, measureWords, users, allUserProgress, settings]);
 
   // Import JSON with automatic database sync
   const importData = useCallback((jsonData: string): boolean => {
@@ -884,6 +1043,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       if (Array.isArray(parsed.rules) && parsed.rules.length > 0) {
         setRules(parsed.rules);
+      }
+      if (Array.isArray(parsed.measureWords) && parsed.measureWords.length > 0) {
+        setMeasureWords(parsed.measureWords);
       }
       if (Array.isArray(parsed.users) && parsed.users.length > 0) {
         setUsers(parsed.users);
@@ -944,6 +1106,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleRuleMastered,
         recordRuleTest,
         resetRulesToDefault,
+
+        measureWords,
+        measureWordsCount,
+        masteredMeasureWordsCount,
+        addMeasureWord,
+        updateMeasureWord,
+        deleteMeasureWord,
+        toggleMeasureWordMastered,
+        recordMeasureWordQuiz,
+        resetMeasureWordsToDefault,
 
         currentUser,
         users,

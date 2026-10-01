@@ -1,4 +1,4 @@
-import { Word, UserProfile, DatabaseSchema, UserWordProgress, ChineseRule } from '../types';
+import { Word, UserProfile, DatabaseSchema, UserWordProgress, ChineseRule, ChineseMeasureWord } from '../types';
 
 const API_BASE = '/api';
 
@@ -540,6 +540,120 @@ export class ApiService {
       return data.rules || [];
     } catch (err) {
       console.error('[ApiService] resetRules error:', err);
+      return [];
+    }
+  }
+
+  // ==================== MEASURE WORDS (LƯỢNG TỪ) API ====================
+
+  /**
+   * Get all Chinese measure words
+   */
+  public static async getMeasureWords(): Promise<ChineseMeasureWord[]> {
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/measure-words`);
+      if (!res.ok) throw new Error('Failed to fetch measure words');
+      return await res.json();
+    } catch (err) {
+      console.error('[ApiService] getMeasureWords error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Add a new Chinese measure word
+   */
+  public static async addMeasureWord(mw: Partial<ChineseMeasureWord>): Promise<ChineseMeasureWord | null> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/measure-words`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mw)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Lỗi khi thêm lượng từ');
+      }
+      return data.measureWord || null;
+    } catch (err) {
+      console.error('[ApiService] addMeasureWord error:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Update a Chinese measure word
+   */
+  public static async updateMeasureWord(id: string, updates: Partial<ChineseMeasureWord>): Promise<ChineseMeasureWord | null> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/measure-words/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi khi cập nhật lượng từ');
+      return data.measureWord || null;
+    } catch (err) {
+      console.error('[ApiService] updateMeasureWord error:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Delete a Chinese measure word
+   */
+  public static async deleteMeasureWord(id: string): Promise<boolean> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/measure-words/${id}`, {
+        method: 'DELETE'
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('[ApiService] deleteMeasureWord error:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Update measure word mastery or quiz outcome
+   */
+  public static async updateMeasureWordProgress(
+    id: string,
+    isMastered?: boolean,
+    isCorrect?: boolean
+  ): Promise<ChineseMeasureWord | null> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/measure-words/${id}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isMastered, isCorrect })
+      });
+      const data = await res.json();
+      return data.measureWord || null;
+    } catch (err) {
+      console.error('[ApiService] updateMeasureWordProgress error:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Reset measure words to starter default
+   */
+  public static async resetMeasureWords(): Promise<ChineseMeasureWord[]> {
+    ApiService.fullDataCache = null;
+    try {
+      const res = await ApiService.fetchWithRetry(`${API_BASE}/measure-words/reset-seed`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      return data.measureWords || [];
+    } catch (err) {
+      console.error('[ApiService] resetMeasureWords error:', err);
       return [];
     }
   }

@@ -7,6 +7,7 @@ import { AIReadingPassage } from './components/AIReadingPassage';
 import { QuickQuiz } from './components/QuickQuiz';
 import { StrokeOrderCanvas } from './components/StrokeOrderCanvas';
 import { ChineseRulesView } from './components/ChineseRulesView';
+import { MeasureWordsView } from './components/MeasureWordsView';
 import { BulkAddModal } from './components/BulkAddModal';
 import { SettingsModal } from './components/SettingsModal';
 import { UserSelectionModal } from './components/UserSelectionModal';
@@ -51,6 +52,10 @@ const MainLayout: React.FC = () => {
 
           {activeTab === 'rules' && (
             <ChineseRulesView />
+          )}
+
+          {activeTab === 'measure_words' && (
+            <MeasureWordsView onOpenStrokeWriter={handleOpenStrokeWriter} />
           )}
 
           {activeTab === 'stories' && (
